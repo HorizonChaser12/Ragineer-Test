@@ -1,0 +1,60 @@
+Hardware Issues and Solutions
+
+=== COMPUTER PROBLEMS ===
+
+Problem: Computer won't turn on
+Symptoms: No power, no lights, no sounds when pressing power button
+Solution: Check power cable connections, test power supply, verify power button functionality
+Resolution Time: 15-30 minutes
+
+Problem: Computer running very slowly
+Symptoms: Long boot times, delayed program responses, frequent freezing
+Solution: Run disk cleanup, check for malware, increase RAM if needed, defragment hard drive
+Resolution Time: 1-2 hours
+
+Problem: Blue screen of death (BSOD)
+Symptoms: Random system crashes with blue error screen
+Solution: Update drivers, run memory test, check for overheating, scan for hardware failures
+Resolution Time: 2-4 hours
+
+=== PRINTER PROBLEMS ===
+
+Problem: Printer not printing
+Symptoms: Jobs sent to print queue but nothing prints
+Solution: Check printer power, verify cable connections, restart print spooler service
+Resolution Time: 10-20 minutes
+
+Problem: Poor print quality
+Symptoms: Faded text, streaky lines, smudged output
+Solution: Clean print heads, replace ink/toner cartridges, calibrate printer settings
+Resolution Time: 20-40 minutes
+
+Problem: Paper jams frequently
+Symptoms: Paper gets stuck during printing process
+Solution: Clean paper path, check paper quality, adjust paper guides, inspect rollers
+Resolution Time: 15-25 minutes
+
+=== NETWORK ISSUES ===
+
+Problem: No internet connection
+Symptoms: Cannot browse websites or send emails
+Solution: Check network cables, restart router/modem, verify IP settings, contact ISP
+Resolution Time: 30-60 minutes
+
+Problem: Slow network performance
+Symptoms: Web pages load slowly, file transfers take excessive time
+Solution: Check bandwidth usage, update network drivers, optimize router settings
+Resolution Time: 45-90 minutes
+
+Problem: Cannot connect to Wi-Fi
+Symptoms: Network not showing in available networks list
+Solution: Restart Wi-Fi adapter, forget and reconnect to network, update wireless drivers
+Resolution Time: 15-30 minutes
+
+=== COMMON SOLUTIONS ===
+
+1. Always try restarting the device first
+2. Check all cable connections
+3. Update drivers and software
+4. Run built-in diagnostic tools
+5. Contact technical support if problem persists

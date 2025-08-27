@@ -1,0 +1,11 @@
+Device Name,Problem Type,Issue Description,Diagnostic Steps,Solution Applied,Time to Fix,Status,Notes
+Dell Laptop 1,Battery,Battery drains quickly - only lasts 1 hour,Check power settings and battery health,Replaced battery and updated power management drivers,45 minutes,Completed,Battery life now 6+ hours
+HP Desktop 2,Memory,Random system crashes with memory errors,Ran memory diagnostic test,Replaced faulty 8GB RAM module,30 minutes,Completed,System stable for 2 weeks
+Surface Pro 3,Display,Screen flickers intermittently,Updated graphics drivers and checked connections,Replaced display cable assembly,90 minutes,Completed,No flickering observed
+MacBook Air 4,Keyboard,Several keys not registering keystrokes,Cleaned keyboard and checked for debris,Replaced keyboard assembly,120 minutes,Completed,All keys functioning properly
+Gaming PC 5,Overheating,CPU temperatures reaching 95C under load,Cleaned dust and checked thermal paste,Replaced CPU cooler and thermal paste,60 minutes,Completed,Temperatures now under 70C
+Office Printer 1,Paper Feed,Paper jams occurring multiple times daily,Inspected paper path and rollers,Cleaned and aligned paper feed mechanism,25 minutes,Completed,No jams in past week
+Network Switch 1,Connectivity,Ports 5-8 not providing network connection,Tested cables and port functionality,Replaced network switch unit,20 minutes,Completed,All ports operational
+Tablet Device 1,Touch Screen,Touch input not responding in bottom section,Ran touch screen calibration,Replaced digitizer assembly,150 minutes,Completed,Touch working across entire screen
+Wireless Router 1,Range,Weak signal in back offices,Analyzed Wi-Fi coverage and signal strength,Added mesh access point in central location,40 minutes,Completed,Strong signal throughout office
+External HDD 1,Read Errors,Frequent file corruption and read failures,Ran disk health diagnostics,Drive declared faulty - data backed up to new drive,180 minutes,Completed,All data successfully recovered

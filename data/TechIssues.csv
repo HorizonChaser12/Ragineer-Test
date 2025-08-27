@@ -1,0 +1,11 @@
+Name,Issue,Description,Solution,Category,Priority,Status
+Network Router Issue,Connection drops frequently,Users experiencing intermittent network disconnections every 15-30 minutes,Replace network router and update firmware to latest version,Network,High,Resolved
+Printer Ink Problem,Print quality poor,Documents printing with faded text and missing lines,Replace ink cartridges and run print head cleaning cycle,Hardware,Medium,Open
+Software License,Application crashes on startup,Customer management software fails to launch with error code 0x80070002,Reinstall software and verify license activation,Software,High,In Progress
+Database Backup,Daily backups failing,Automated backup process has been failing for the past week,Check disk space and update backup configuration file,System,Critical,Open
+Email Server,Emails delayed by 2+ hours,Outgoing emails are queued and not being sent in timely manner,Restart email service and check SMTP settings,Communication,High,Resolved
+Monitor Display,Screen flickering issue,External monitor randomly flickers and goes black for 2-3 seconds,Replace display cable and update graphics drivers,Hardware,Medium,Resolved
+Wi-Fi Access Point,Weak signal in conference room,Meeting participants unable to connect to Wi-Fi in main conference room,Install additional access point and configure mesh network,Network,Medium,Open
+Keyboard Malfunction,Keys not registering,Several keys on office keyboards not responding to input,Replace faulty keyboards and order spare units,Hardware,Low,Open
+Operating System,Blue screen errors,Workstations experiencing random blue screen crashes 2-3 times daily,Run memory diagnostic and update system drivers,System,Critical,In Progress
+Phone System,Calls dropping after 5 minutes,Conference calls automatically ending after exactly 5 minutes,Update phone system firmware and adjust call timeout settings,Communication,Medium,Resolved
