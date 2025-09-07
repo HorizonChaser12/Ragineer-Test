@@ -3,7 +3,12 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+import sys
+import os
+
+# Add the parent directory to the path to allow imports from config and models
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from config import ModelConfig
 from models import ModelFactory
 from typing import Union, Optional, List, Dict, Any
@@ -23,7 +28,7 @@ from db.simple_store import SimpleVectorStore
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    filename="rag_system_api.log",
+    filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), "rag_system_api.log"),
     filemode="a",
 )
 
@@ -95,7 +100,7 @@ class EnhancedAdaptiveRAGSystem:
         self.chunk_to_original_doc_mapping: List[int] = []
         
         # Initialize chat memory
-        from db.chat_memory import ChatMemoryStore
+        from .db.chat_memory import ChatMemoryStore
         self.chat_memory = ChatMemoryStore(memory_directory="./db/chat_memory")
         
         # Store loaded data info
@@ -229,67 +234,47 @@ class EnhancedAdaptiveRAGSystem:
         if self.llm:
 
             self.response_template = """
-You are a helpful technical support assistant. Your goal is to provide comprehensive and accurate answers based on the information available.
+You are a helpful technical support assistant. Your goal is to provide accurate and contextual answers based on the available data and conversation history.
 
-Here's an overview of the dataset you are working with:
+Previous Conversation Context:
+{conversation_context}
+
+Dataset Overview:
 {dataset_overview}
 
-For the user's specific query, the following documents have been retrieved as potentially relevant:
+Retrieved Documents:
 {retrieved_documents_context}
 
-Additionally, here's an analysis of patterns found within these retrieved documents:
+Pattern Analysis:
 {pattern_analysis_summary}
 
-User Query: {query}
+Current User Query: {query}
 
-Based on all the information above, provide a well-structured, professional response that addresses the user's query.
+RESPONSE GUIDELINES:
+1. If the user is asking about previous questions or context (like "what did I ask?", "tell me again", "repeat that"), refer to the conversation context above and provide a clear, direct answer.
 
-CRITICAL FORMATTING RULES:
-1. Write in complete, well-formed sentences and paragraphs.
-2. Use section headers followed by a colon, like "Summary of Mobile App Defects:".
-3. For bullet points, use a simple asterisk (*).
-4. Do NOT use extra asterisks, broken formatting, or incomplete sentences.
-5. Use proper paragraph breaks (double line breaks) between sections.
+2. If the query is about technical issues, defects, or data analysis, provide a structured response with relevant document references with a good explanation of the documents and important info that needs to be addressed.
 
-Structure your response like this example:
-- Opening statement acknowledging the query.
-- Clear section with header for main topic summary.
-- Specific details section with examples and document references.
-- Patterns or trends section if relevant.
-- Recommendations section with actionable items.
+3. If the query is completely unrelated to the available technical data (like food, weather, entertainment), simply respond: "Sorry, I can only help with technical issues and data analysis based on the available documents. Please ask questions related to defects, bugs, system issues, or data analysis."
 
-Example structure:
-Based on the available data, I can provide information about [topic].
+4. Keep responses concise and focused. Only use detailed sections (Summary, Specific Details, Recommendations) when the query specifically requests comprehensive analysis and please be able to answer all the things based on the internet data too.
 
-Summary of Mobile App Defects:
-[Write complete paragraphs here describing the main findings]
+5. For follow-up questions or clarifications, provide direct answers without unnecessary structure.
 
-Specific Details:
-Here are examples from the dataset:
-* [Complete bullet point with Document ID reference]
-* [Complete bullet point with Document ID reference]
-
-Recommendations:
-Based on the analysis:
-* [Complete actionable recommendation]
-* [Complete actionable recommendation]
-
-Guidelines:
-- If the query is general, use dataset overview more. If specific, focus on retrieved documents.
-- Always cite Document IDs when referencing specific cases.
-- Provide actionable recommendations when appropriate.
-- Write in complete, professional sentences.
-- Use proper paragraph structure.
-
-Important: If the question is not related to the available data, clearly state that you cannot provide that information.
+Format your response appropriately:
+- For memory/context questions: Direct, conversational answer
+- For simple technical questions: Brief, focused response with document references
+- For complex analysis requests: Structured response with sections
+- For unrelated questions: Polite redirect message
 
 Response:
 """
 
             self.prompt = PromptTemplate(
                 input_variables=[
+                    "conversation_context",
                     "dataset_overview",
-                    "retrieved_documents_context",
+                    "retrieved_documents_context", 
                     "pattern_analysis_summary",
                     "query",
                 ],
@@ -297,9 +282,10 @@ Response:
                 validate_template=True,
             )
 
-            self.chain = LLMChain(llm=self.llm, prompt=self.prompt)
+            # Use modern LangChain syntax: prompt | llm
+            self.chain = self.prompt | self.llm
 
-            logger.info("LLMChain initialized with comprehensive prompt.")
+            logger.info("LLM Chain initialized with comprehensive prompt using modern syntax.")
 
         else:
 
@@ -645,8 +631,9 @@ Response:
         return {
             'data_source': self.data_source,
             'loaded_files': self.loaded_files,
+            'files_loaded_count': len(self.loaded_files) if self.loaded_files else 0,
             'total_documents': self.total_documents,
-            'vector_store_ready': hasattr(self, 'index') and self.index is not None,
+            'vector_store_ready': hasattr(self, 'vector_store') and self.vector_store is not None and hasattr(self.vector_store, 'collection') and self.vector_store.collection is not None,
             'models_ready': {
                 'embedding_model': self.embedding_model is not None,
                 'llm': self.llm is not None,
@@ -1076,7 +1063,6 @@ Response:
         return analysis
 
     def generate_response(self, query: str, k: int = 3) -> Dict[str, Any]:
-
         if not self.chain:
 
             logger.error("Cannot generate response: LLM chain not initialized.")
@@ -1164,28 +1150,31 @@ Response:
 
             logger.info("Calling LLM chain to generate response...")
 
-            response = self.chain.run(
-                dataset_overview=dataset_overview_summary,
-                retrieved_documents_context=retrieved_documents_llm_context,
-                pattern_analysis_summary=pattern_analysis_llm_summary,
-                query=query,
-            )
+            # Get conversation context for the prompt
+            conversation_context = self.chat_memory.get_recent_context(num_turns=3)
+
+            response = self.chain.invoke({
+                "conversation_context": conversation_context,
+                "dataset_overview": dataset_overview_summary,
+                "retrieved_documents_context": retrieved_documents_llm_context,
+                "pattern_analysis_summary": pattern_analysis_llm_summary,
+                "query": query,
+            })
+            
+            response_text = response['text'] if isinstance(response, dict) else response
 
             logger.info(
-                f"LLM response generated successfully. Length: {len(response)} characters"
+                f"LLM response generated successfully. Length: {len(response_text)} characters"
             )
 
         except Exception as e:
 
             logger.error(f"Error generating LLM response: {e}", exc_info=True)
 
-            response = f"I apologize, but I encountered an error while processing your query: {str(e)}"
+            response_text = f"I apologize, but I encountered an error while processing your query: {str(e)}"
 
         # Add assistant response to chat memory
-        self.chat_memory.add_assistant_message(response, metadata={
-            "retrieved_docs_count": len(retrieved_docs),
-            "query_length": len(query)
-        })
+        self.chat_memory.add_assistant_message(response_text)
 
         # Prepare response with serializable data
 
@@ -1194,174 +1183,78 @@ Response:
         serializable_pattern_analysis = make_serializable(pattern_analysis)
 
         return {
-            "response": response,
+            "response": response_text,
             "retrieved_docs": serializable_retrieved_docs,
             "pattern_analysis": serializable_pattern_analysis,
             "dataset_overview": dataset_overview_summary,
             "query": query,
         }
 
-    def get_system_status(self) -> Dict[str, Any]:
-        """Get comprehensive system status information"""
-        # Count actual documents in vector store
-        documents_count = 0
-        vector_store_ready = False
-        if hasattr(self, 'vector_store') and self.vector_store is not None:
-            try:
-                collection = self.vector_store.collection
-                documents_count = collection.count() if collection else 0
-                vector_store_ready = documents_count > 0
-            except:
-                documents_count = len(self.metadata) if hasattr(self, 'metadata') and self.metadata else 0
-                vector_store_ready = documents_count > 0
-
-        # Count loaded files
-        files_loaded_count = len(self.loaded_files) if hasattr(self, 'loaded_files') and self.loaded_files else 0
+    # Chit-chat detection removed temporarily - will be re-implemented later
+    # when the PoC is fully ready
+    
+    def _format_response_for_streaming(self, response_text: str) -> str:
+        """Format response text for streaming by ensuring proper structure."""
+        # Clean up any extra whitespace and ensure proper formatting
+        lines = response_text.strip().split('\n')
+        formatted_lines = []
         
-        # Check models status
-        embedding_model_ready = self.embedding_model is not None
-        llm_ready = self.llm is not None
-        sentence_transformer_ready = self.sentence_transformer is not None
-        reranker_ready = self.reranker is not None if self.use_reranker else True
+        for line in lines:
+            line = line.strip()
+            if line:
+                formatted_lines.append(line)
         
-        models_ready_dict = {
-            "embedding_model": embedding_model_ready,
-            "llm": llm_ready,
-            "sentence_transformer": sentence_transformer_ready,
-            "reranker": reranker_ready
-        }
-        
-        models_ready = embedding_model_ready and llm_ready and sentence_transformer_ready and reranker_ready
-        
-        # Get better data source info
-        data_source_info = "Not set"
-        if hasattr(self, 'data_source') and self.data_source:
-            data_source_info = self.data_source
-        elif hasattr(self, 'loaded_files') and self.loaded_files:
-            data_source_info = f"{len(self.loaded_files)} files from data directory"
+        return '\n'.join(formatted_lines)
 
-        status = {
-            "initialized": models_ready and vector_store_ready,
-            "embedding_model_ready": embedding_model_ready,
-            "llm_ready": llm_ready,
-            "data_loaded": self.data is not None and not self.data.empty,
-            "sentence_transformer_ready": sentence_transformer_ready,
-            "reranker_ready": reranker_ready,
-            "total_documents": documents_count,
-            "files_loaded_count": files_loaded_count,
-            "loaded_files": list(self.loaded_files) if hasattr(self, 'loaded_files') and self.loaded_files else [],
-            "vector_store_ready": vector_store_ready,
-            "models_ready": models_ready_dict,
-            "data_source": data_source_info,
-            "index_dimension": self.dimension,
-            "features_enabled": {
-                "sentence_transformers": self.use_sentence_transformers,
-                "reranker": self.use_reranker,
-                "chromadb_integration": True
-            },
-        }
-
-        if self.data is not None:
-            status["data_shape"] = list(self.data.shape)
-            status["columns"] = list(self.data.columns)
-            status["column_info"] = self.column_info
-
-        if self.st_embeddings is not None:
-            status["sentence_transformer_embeddings_count"] = len(self.st_embeddings)
-
-        return make_serializable(status)
-
-    def _format_response_for_streaming(self, response: str) -> str:
-        """Format the AI response with proper structure and spacing"""
+    def _html_format_response(self, response_text: str) -> str:
+        """Convert response text to HTML format for streaming."""
         import re
-        
-        # Clean up the response first
-        formatted = response.strip()
         
         # Split into paragraphs
-        paragraphs = formatted.split('\n\n')
-        formatted_paragraphs = []
-        
-        for paragraph in paragraphs:
-            if not paragraph.strip():
-                continue
-            
-            lines = paragraph.split('\n')
-            formatted_lines = []
-            
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Keep existing **headers** exactly as they are
-                if line.startswith('**') and line.endswith('**'):
-                    formatted_lines.append(line)
-                # Handle bullet points
-                elif line.startswith('*') or line.startswith('-') or line.startswith('•'):
-                    bullet_content = re.sub(r'^[\*\-•]\s*', '', line).strip()
-                    if bullet_content:
-                        formatted_lines.append(f"• {bullet_content}")
-                # Regular text lines
-                else:
-                    formatted_lines.append(line)
-            
-            if formatted_lines:
-                formatted_paragraphs.append('\n'.join(formatted_lines))
-        
-        return '\n\n'.join(formatted_paragraphs)
-    
-    def _html_format_response(self, response: str) -> str:
-        """Convert properly formatted response to HTML for streaming"""
-        import re
-        
-        # First clean up the response
-        formatted = self._format_response_for_streaming(response)
-        
-        # Split by paragraphs
-        paragraphs = formatted.split('\n\n')
+        paragraphs = response_text.split('\n\n')
         html_parts = []
         
         for paragraph in paragraphs:
-            if not paragraph.strip():
+            paragraph = paragraph.strip()
+            if not paragraph:
                 continue
-            
-            lines = paragraph.strip().split('\n')
-            paragraph_content = []
-            
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
                 
-                # Convert **headers** to <strong>
-                if line.startswith('**') and line.endswith('**'):
-                    header_text = line[2:-2]  # Remove ** from both ends
-                    paragraph_content.append(f'<strong>{header_text}</strong>')
-                # Convert bullet points
-                elif line.startswith('•'):
-                    paragraph_content.append(f'<div class="bullet-point">{line}</div>')
-                # Regular text
-                else:
-                    paragraph_content.append(line)
-            
-            # Group content appropriately
-            if paragraph_content:
-                # Separate bullets from non-bullets
-                non_bullets = [c for c in paragraph_content if not c.startswith('<div class="bullet-point">')]
-                bullets = [c for c in paragraph_content if c.startswith('<div class="bullet-point">')]
+            # Check if it's a header (ends with colon and is relatively short)
+            if paragraph.endswith(':') and len(paragraph) < 100 and '\n' not in paragraph:
+                html_parts.append(f'<strong class="section-header">{paragraph}</strong>')
+            # Check if it contains bullet points
+            elif paragraph.startswith('*') or paragraph.startswith('-') or '\n*' in paragraph or '\n-' in paragraph:
+                lines = paragraph.split('\n')
+                bullet_group = []
+                regular_lines = []
                 
-                # Add non-bullet content as paragraphs
-                if non_bullets:
-                    html_parts.append(f'<p>{"<br>".join(non_bullets)}</p>')
+                for line in lines:
+                    line = line.strip()
+                    if line.startswith('*') or line.startswith('-'):
+                        # If we have regular lines before this bullet, add them first
+                        if regular_lines:
+                            html_parts.append(f'<p class="response-paragraph">{"<br>".join(regular_lines)}</p>')
+                            regular_lines = []
+                        # Remove the bullet character and wrap in bullet div
+                        content = line[1:].strip()
+                        if content:  # Only add non-empty bullet items
+                            bullet_group.append(f'<div class="bullet-item">{content}</div>')
+                    elif line:
+                        regular_lines.append(line)
                 
-                # Add bullets separately
-                html_parts.extend(bullets)
+                # Add any collected bullet items
+                if bullet_group:
+                    html_parts.extend(bullet_group)
+                # Add any remaining regular lines
+                if regular_lines:
+                    html_parts.append(f'<p class="response-paragraph">{"<br>".join(regular_lines)}</p>')
+            else:
+                # Regular paragraph
+                html_parts.append(f'<p class="response-paragraph">{paragraph}</p>')
         
         return ''.join(html_parts)
 
     async def generate_response_stream(self, query: str, k: int = 3):
-        """Generate streaming response for a query, yielding tokens as they're generated"""
         if not self.chain:
             logger.error("Cannot generate response: LLM chain not initialized.")
             yield {
@@ -1376,23 +1269,10 @@ Response:
         # Add user message to chat memory
         self.chat_memory.add_user_message(query)
 
-        # Send initial status
-        yield {
-            "type": "status", 
-            "content": "Retrieving relevant documents...",
-            "done": False
-        }
-
         # Generate dataset overview and retrieve documents
         try:
             dataset_overview_summary = self._generate_dataset_overview_summary()
             retrieved_docs = self.retrieve(query, k)
-
-            yield {
-                "type": "status",
-                "content": f"Found {len(retrieved_docs)} relevant documents. Analyzing patterns...",
-                "done": False
-            }
 
             # Prepare context
             if retrieved_docs:
@@ -1447,38 +1327,28 @@ Response:
 
             pattern_analysis_llm_summary = "\n".join(pattern_analysis_llm_summary_parts)
 
-            yield {
-                "type": "status",
-                "content": "Generating AI response...",
-                "done": False
-            }
-
             # Generate the complete response first
-            response = self.chain.run(
-                dataset_overview=dataset_overview_summary,
-                retrieved_documents_context=retrieved_documents_llm_context,
-                pattern_analysis_summary=pattern_analysis_llm_summary,
-                query=query,
-            )
+            conversation_context = self.chat_memory.get_recent_context(num_turns=3)
+            
+            response = self.chain.invoke({
+                "conversation_context": conversation_context,
+                "dataset_overview": dataset_overview_summary,
+                "retrieved_documents_context": retrieved_documents_llm_context,
+                "pattern_analysis_summary": pattern_analysis_llm_summary,
+                "query": query,
+            })
+            
+            response_text = response['text'] if isinstance(response, dict) else response
 
             # Add assistant response to chat memory
-            self.chat_memory.add_assistant_message(response, metadata={
-                "retrieved_docs_count": len(retrieved_docs),
-                "query_length": len(query)
-            })
+            self.chat_memory.add_assistant_message(response_text)
 
             # Format the response properly before streaming
-            formatted_response = self._format_response_for_streaming(response)
-
-            yield {
-                "type": "status",
-                "content": "Streaming response...",
-                "done": False
-            }
+            formatted_response = self._format_response_for_streaming(response_text)
 
             # First format the entire response as HTML
             import re
-            formatted_html = self._html_format_response(response)
+            formatted_html = self._html_format_response(response_text)
             
             # Split the formatted HTML into meaningful chunks for streaming
             # This approach preserves complete HTML tags and word boundaries

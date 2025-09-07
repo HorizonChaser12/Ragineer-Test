@@ -141,6 +141,46 @@
             justify-content: center;
         }
 
+        /* Status Pill */
+        .chat-header {
+            position: relative; /* For positioning context */
+        }
+
+        .header-status-pill {
+            position: absolute;
+            top: 50%;
+            right: 24px;
+            transform: translateY(-50%);
+            background: #fce8e6;
+            color: #a50e0e;
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .header-status-pill .status-text {
+            transition: color 0.3s ease;
+        }
+        .header-status-pill .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #f44336; /* Default to offline */
+            margin-left: 8px;
+            transition: background-color 0.3s ease;
+        }
+        .header-status-pill.online {
+            background: #e8f5e9;
+            color: #1e8e3e;
+        }
+        .header-status-pill.online .status-dot {
+            background: #4caf50;
+        }
+
         .chat-messages {
             flex: 1;
             overflow-y: auto;
@@ -212,11 +252,12 @@
 
         .message.assistant .bullet-item,
         .message.assistant .bullet-point {
-            margin: 6px 0;
-            padding-left: 12px;
+            margin: 8px 0;
+            padding-left: 20px;
             display: block;
             line-height: 1.5;
             position: relative;
+            text-indent: 0;
         }
         
         .message.assistant .bullet-item::before,
@@ -224,9 +265,23 @@
             content: "•";
             position: absolute;
             left: 0;
+            top: 0;
             color: #2196f3;
             font-weight: bold;
             font-size: 16px;
+            line-height: 1.5;
+            width: 16px;
+            text-align: left;
+        }
+
+        .document-ref {
+            color: #666;
+            font-size: 0.9em;
+            font-weight: normal;
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 4px;
         }
 
         .message.assistant .response-paragraph,
@@ -496,6 +551,8 @@
             color: #666;
         }
 
+        /* Status Indicator - REMOVED */
+
         /* Responsive */
         @media (max-width: 768px) {
             .sidebar {
@@ -562,7 +619,11 @@
         <!-- Main Chat Area -->
         <div class="chat-area">
             <div class="chat-header">
-                <div class="chat-title">Fix Finder</div>
+                <h1 class="chat-title">Fix-Finder</h1>
+                <div class="header-status-pill">
+                    <span class="status-text">System Status</span>
+                    <div class="status-dot"></div>
+                </div>
             </div>
 
             <div class="chat-messages" id="chatMessages">
@@ -637,75 +698,31 @@
             }
 
             initializeEventListeners() {
-                // Send message on button click - prevent default behavior
+                // Send message on button click
                 this.sendButton.addEventListener('click', (e) => {
                     e.preventDefault();
-                    e.stopPropagation();
-                    e.stopImmediatePropagation();
-                    console.log('Send button clicked');
                     this.sendMessage();
-                    return false;
                 });
                 
                 // Send message on Enter (Shift+Enter for new line)
                 this.chatInput.addEventListener('keydown', (e) => {
-                    console.log('Key pressed:', e.key, 'Shift:', e.shiftKey, 'Target:', e.target.tagName);
                     if (e.key === 'Enter' && !e.shiftKey) {
-                        console.log('Enter pressed, preventing default and sending message');
                         e.preventDefault();
-                        e.stopPropagation();
-                        e.stopImmediatePropagation();
-                        // Call sendMessage directly without setTimeout
                         this.sendMessage();
-                        return false;
                     }
                 });
 
-                // Additional keypress handler to catch any remaining Enter events
-                this.chatInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        console.log('Keypress Enter caught, preventing default');
-                        e.preventDefault();
-                        e.stopPropagation();
-                        e.stopImmediatePropagation();
-                        return false;
-                    }
-                });
-
-                // Prevent any input submission behavior
+                // Auto-resize textarea
                 this.chatInput.addEventListener('input', (e) => {
-                    // Auto-resize textarea
                     e.target.style.height = 'auto';
                     e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
                 });
 
                 // Sidebar actions
-                document.getElementById('quickStartBtn').addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('Quick Start button clicked');
-                    this.quickStart();
-                    return false;
-                });
-                document.getElementById('autoInitBtn').addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('Auto Init button clicked');
-                    this.autoInitialize();
-                    return false;
-                });
-                document.getElementById('reloadBtn').addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('Reload button clicked');
-                    this.reloadData();
-                    return false;
-                });
-                document.getElementById('refreshStatusBtn').addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('Refresh Status button clicked');
-                    // For manual refresh, update immediately with visual feedback
+                document.getElementById('quickStartBtn').addEventListener('click', () => this.quickStart());
+                document.getElementById('autoInitBtn').addEventListener('click', () => this.autoInitialize());
+                document.getElementById('reloadBtn').addEventListener('click', () => this.reloadData());
+                document.getElementById('refreshStatusBtn').addEventListener('click', () => {
                     const btn = document.getElementById('refreshStatusBtn');
                     const originalText = btn.textContent;
                     btn.textContent = 'Updating...';
@@ -719,49 +736,33 @@
             }
 
             async sendMessage() {
-                console.log('sendMessage called');
+                const message = this.chatInput.value.trim();
+                if (!message || this.isTyping) {
+                    return;
+                }
+
+                // Hide welcome message on first user message
+                this.hideWelcomeMessage();
+
+                this.addMessage(message, 'user');
+                this.chatInput.value = '';
+                this.chatInput.style.height = 'auto';
+                
+                this.isTyping = true;
+                this.sendButton.disabled = true;
+                
+                // Show typing indicator
+                const typingId = this.showTypingIndicator();
+                
                 try {
-                    const message = this.chatInput.value.trim();
-                    console.log('Message:', message);
-                    if (!message || this.isTyping) {
-                        console.log('No message or already typing, returning');
-                        return false;
-                    }
-
-                    console.log('Processing message...');
-                    // Hide welcome message on first user message
-                    this.hideWelcomeMessage();
-
-                    this.addMessage(message, 'user');
-                    this.chatInput.value = '';
-                    this.chatInput.style.height = 'auto';
-                    
-                    this.isTyping = true;
-                    this.sendButton.disabled = true;
-                    
-                    console.log('Starting stream response...');
-                    // Show typing indicator
-                    const typingId = this.showTypingIndicator();
-                    
-                    try {
-                        await this.streamResponse(message, typingId);
-                        console.log('Stream response completed');
-                    } catch (error) {
-                        console.error('Streaming error:', error);
-                        this.hideTypingIndicator(typingId);
-                        this.addMessage(`Sorry, I encountered an error: ${error.message}`, 'assistant');
-                    } finally {
-                        this.isTyping = false;
-                        this.sendButton.disabled = false;
-                        console.log('sendMessage completed');
-                    }
-                    
-                    return false; // Prevent any form submission
+                    await this.streamResponse(message, typingId);
                 } catch (error) {
-                    console.error('SendMessage error:', error);
+                    console.error('Streaming error:', error);
+                    this.hideTypingIndicator(typingId);
+                    this.addMessage(`Sorry, I encountered an error: ${error.message}`, 'assistant');
+                } finally {
                     this.isTyping = false;
                     this.sendButton.disabled = false;
-                    return false;
                 }
             }
 
@@ -803,27 +804,44 @@
                     return content; // Already formatted by backend
                 }
 
+                console.log('Formatting content:', content); // Debug log
+
                 // Convert various text patterns to better formatted HTML
-                let formatted = content
-                    // Format headers with ** pattern
-                    .replace(/\*\*([^*]+)\*\*/g, '<strong class="section-header">$1</strong>')
-                    // Format numbered lists
-                    .replace(/(\d+\.\s+)([^\n]*)/g, '<div class="numbered-item"><span class="number">$1</span>$2</div>')
-                    // Format bullet points with proper styling
-                    .replace(/•\s*([^\n]*)/g, '<div class="bullet-item">• $1</div>')
-                    // Format document IDs
-                    .replace(/Document ID (\d+)/g, '<span class="document-id">Document ID $1</span>')
-                    // Format phases (Production, System Testing, etc.)
-                    .replace(/"([^"]*Production[^"]*)"/g, '<span class="phase-tag production">"$1"</span>')
-                    .replace(/"([^"]*System Testing[^"]*)"/g, '<span class="phase-tag system-testing">"$1"</span>')
-                    .replace(/"([^"]*Non-production[^"]*)"/g, '<span class="phase-tag non-production">"$1"</span>')
-                    // Format severity levels
-                    .replace(/"Critical"/g, '<span class="severity critical">"Critical"</span>')
-                    .replace(/"Performance issue"/g, '<span class="issue-type performance">"Performance issue"</span>')
-                    .replace(/"Configuration issue"/g, '<span class="issue-type config">"Configuration issue"</span>')
-                    .replace(/"Accessibility issues"/g, '<span class="issue-type accessibility">"Accessibility issues"</span>')
-                    // Format recommendations section
-                    .replace(/(\*\*Recommendations:\*\*)/g, '<div class="recommendations-header">$1</div>');
+                let formatted = content;
+                
+                // Step 1: Handle bullet points with ** at the start of lines or after line breaks
+                // This catches patterns like "**General Troubleshooting (Document 118):**"
+                formatted = formatted.replace(/(?:^|\n)\*\*([^*]+)\*\*/gm, function(match, text) {
+                    // Check if this looks like a bullet point (contains "Document" or starts with capital letter)
+                    if (text.includes('Document') || /^[A-Z][a-z\s]+/.test(text)) {
+                        return `\n<div class="bullet-item"><strong>${text}</strong></div>`;
+                    }
+                    // If not a bullet point, keep the ** for later processing
+                    return match;
+                });
+                
+                // Step 2: Handle remaining ** patterns as bold text (inline formatting)
+                formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+                
+                // Step 3: Format numbered lists
+                formatted = formatted.replace(/(\d+\.\s+)([^\n]*)/g, '<div class="numbered-item"><span class="number">$1</span>$2</div>');
+                
+                // Step 4: Format bullet points with • character (backup)
+                formatted = formatted.replace(/•\s*([^\n]*)/g, '<div class="bullet-item">$1</div>');
+                
+                // Step 5: Enhanced formatting for document references
+                formatted = formatted.replace(/\(Document (\d+)\)/g, '<span class="document-ref">(Document $1)</span>');
+                
+                // Step 6: Format phases and severity levels
+                formatted = formatted.replace(/"([^"]*Production[^"]*)"/g, '<span class="phase-tag production">"$1"</span>');
+                formatted = formatted.replace(/"([^"]*System Testing[^"]*)"/g, '<span class="phase-tag system-testing">"$1"</span>');
+                formatted = formatted.replace(/"([^"]*Non-production[^"]*)"/g, '<span class="phase-tag non-production">"$1"</span>');
+                formatted = formatted.replace(/"Critical"/g, '<span class="severity critical">"Critical"</span>');
+                formatted = formatted.replace(/"Performance issue"/g, '<span class="issue-type performance">"Performance issue"</span>');
+                formatted = formatted.replace(/"Configuration issue"/g, '<span class="issue-type config">"Configuration issue"</span>');
+                formatted = formatted.replace(/"Accessibility issues"/g, '<span class="issue-type accessibility">"Accessibility issues"</span>');
+
+                console.log('Formatted result:', formatted); // Debug log
                 
                 // Handle paragraphs - split by double line breaks and wrap in paragraph tags
                 const paragraphs = formatted.split('\n\n');
@@ -1052,6 +1070,9 @@
                 window.isUpdatingStatus = true;
                 window.lastStatusUpdate = now;
                 
+                const headerPill = document.querySelector('.header-status-pill');
+                const pillText = headerPill.querySelector('.status-text');
+
                 try {
                     console.log('Fetching status...');
                     const response = await fetch(this.getApiUrl('status'));
@@ -1062,17 +1083,21 @@
                         console.log('Rate limited, will retry later...');
                         return;
                     }
+
+                    if (data.initialized) {
+                        headerPill.classList.add('online');
+                        pillText.textContent = 'System Online';
+                    } else {
+                        headerPill.classList.remove('online');
+                        pillText.textContent = 'System Offline';
+                    }
                     
-                    // Update basic status
+                    // Update sidebar info - full status information
                     document.getElementById('systemStatus').textContent = data.initialized ? 'Ready' : 'Not Ready';
                     document.getElementById('systemStatus').className = `status-value ${data.initialized ? 'status-ready' : 'status-error'}`;
-                    
-                    // Update document and file counts
                     document.getElementById('documentCount').textContent = data.total_documents || 0;
                     document.getElementById('filesLoaded').textContent = data.files_loaded_count || 0;
                     document.getElementById('dataSource').textContent = data.data_source || 'Not set';
-                    
-                    // Update vector store status
                     document.getElementById('vectorStore').textContent = data.vector_store_ready ? 'Ready' : 'Not Ready';
                     document.getElementById('vectorStore').className = `status-value ${data.vector_store_ready ? 'status-ready' : 'status-error'}`;
                     
@@ -1094,6 +1119,8 @@
                     
                 } catch (error) {
                     console.error('Failed to update status:', error);
+                    headerPill.classList.remove('online');
+                    pillText.textContent = 'Status Error';
                 } finally {
                     this.isUpdatingStatus = false;
                     window.isUpdatingStatus = false;
@@ -1241,7 +1268,6 @@
 
         // Prevent any page refresh behaviors
         window.addEventListener('beforeunload', (e) => {
-            console.log('Page trying to unload/refresh');
             if (window.chatInterfaceInstance && window.chatInterfaceInstance.isTyping) {
                 e.preventDefault();
                 e.returnValue = 'Chat in progress';
@@ -1257,75 +1283,6 @@
                 return;
             }
             window.chatInterfaceInitialized = true;
-            
-            // Prevent page refresh on any unhandled errors
-            window.addEventListener('unhandledrejection', (event) => {
-                console.error('Unhandled promise rejection:', event.reason);
-                event.preventDefault(); // Prevent page refresh
-            });
-            
-            window.addEventListener('error', (event) => {
-                console.error('JavaScript error:', event.error);
-                event.preventDefault(); // Prevent page refresh
-            });
-            
-            // Prevent any form submissions at document level
-            document.addEventListener('submit', (e) => {
-                console.log('Form submission prevented');
-                e.preventDefault();
-                e.stopPropagation();
-                return false;
-            });
-            
-            // Prevent any navigation triggers
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    if (e.target.id === 'chatInput' && !e.shiftKey) {
-                        console.log('Document level Enter prevention for chatInput');
-                        e.preventDefault();
-                        e.stopImmediatePropagation();
-                        return false;
-                    }
-                }
-                // Prevent F5 refresh
-                if (e.key === 'F5' || (e.ctrlKey && e.key === 'r')) {
-                    console.log('Refresh key prevented');
-                    e.preventDefault();
-                    return false;
-                }
-            }, true); // Use capturing phase to catch early
-
-            // Additional keypress prevention
-            document.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && e.target.id === 'chatInput' && !e.shiftKey) {
-                    console.log('Document level keypress Enter prevention');
-                    e.preventDefault();
-                    e.stopImmediatePropagation();
-                    return false;
-                }
-            }, true); // Use capturing phase
-
-            // Prevent navigation by overriding window methods
-            const originalReload = window.location.reload.bind(window.location);
-            window.location.reload = function() {
-                console.log('Page reload attempt blocked');
-                return false;
-            };
-
-            // Override assign method
-            const originalAssign = window.location.assign.bind(window.location);
-            window.location.assign = function(url) {
-                console.log('Navigation attempt blocked:', url);
-                return false;
-            };
-
-            // Prevent beforeunload dialog
-            window.addEventListener('beforeunload', (e) => {
-                // For debugging - let's see if this gets triggered
-                console.log('Before unload triggered - preventing');
-                e.preventDefault();
-                return undefined;
-            });
             
             console.log('Initializing ChatInterface...');
             new ChatInterface();

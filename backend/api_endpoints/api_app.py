@@ -11,13 +11,17 @@ import uvicorn
 # For logging
 import logging
 import datetime
+import json
 from typing import Optional
 
 # Pydantic Model Imports
 import sys
 import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add paths for imports
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # Root directory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # Backend directory
+
 from schema.pydantic_models import InitializeRequest, RebuildIndexRequest, QueryRequest
 
 # RAG Imports
@@ -127,7 +131,7 @@ async def quick_start_system(data_directory: str = "data"):
         logger.info(f"🚀 Quick starting RAG system with data from: {data_directory}")
         
         # Use the convenience function
-        from rag_system import quick_start
+        from backend.rag_system import quick_start
         rag_system = quick_start(data_directory)
         
         status = rag_system.get_system_status()
@@ -306,7 +310,6 @@ async def query_system_stream(request: QueryRequest):
 
             # Stream RAG response
             async for chunk in rag_system.generate_response_stream(request.query, request.k):
-                import json
                 yield f"data: {json.dumps(chunk)}\n\n"
                     
         except Exception as e:
@@ -459,7 +462,7 @@ async def list_chat_sessions():
 @app.get("/")
 async def root():
     """Serve the chat interface"""
-    frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "chat_interface.html")
+    frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "index.html")
     if os.path.exists(frontend_path):
         return FileResponse(frontend_path)
     else:
@@ -467,7 +470,7 @@ async def root():
         <html>
             <body>
                 <h1>Advanced Fix Finder API</h1>
-                <p>Frontend not found. Please ensure chat_interface.html is in the frontend directory.</p>
+                <p>Frontend not found. Please ensure index.html is in the frontend directory.</p>
                 <p>API documentation: <a href="/docs">/docs</a></p>
                 <p>API Status: <a href="/api-info">/api-info</a></p>
             </body>
