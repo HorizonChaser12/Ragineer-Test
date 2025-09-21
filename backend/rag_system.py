@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import ModelConfig
 from models import ModelFactory
-from typing import Union, Optional, List, Dict, Any
+from typing import Union, Optional, List, Dict, Any, Callable
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -19,10 +19,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain.schema import Document
 import datetime
 import os
+import uuid
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from sklearn.metrics.pairwise import cosine_similarity
 import torch
-from db.simple_store import SimpleVectorStore
+# Import will happen inside __init__ for better error handling
 
 # Configure logging to file only
 logging.basicConfig(
@@ -95,12 +96,13 @@ class EnhancedAdaptiveRAGSystem:
         self.temperature = temperature
         self.auto_initialize = auto_initialize
         
-        # Initialize vector store with persistent storage
-        self.vector_store = SimpleVectorStore(persist_directory="./db/chroma_db")
+        # Initialize vector store with persistent storage and custom embedding function
+        # We'll set up the actual embedding function after model initialization
+        self.vector_store = None
         self.chunk_to_original_doc_mapping: List[int] = []
         
         # Initialize chat memory
-        from .db.chat_memory import ChatMemoryStore
+        from db.chat_memory import ChatMemoryStore
         self.chat_memory = ChatMemoryStore(memory_directory="./db/chat_memory")
         
         # Store loaded data info
@@ -186,6 +188,19 @@ class EnhancedAdaptiveRAGSystem:
             # Set expected dimension for Google's embedding model
             self.dimension = 768  # Gemini embedding dimension
             
+            # Create embedding function wrapper for the vector store
+            def embedding_function_wrapper(text):
+                """Wrapper for embedding model to be used with ChromaDB"""
+                if isinstance(text, list):
+                    # Handle batch embedding
+                    return [self.embedding_model.embed_query(t) for t in text]
+                # Handle single text embedding
+                return self.embedding_model.embed_query(text)
+                
+            # We'll initialize the vector store when building the index
+            self.vector_store = None
+            logger.info("Vector store will be initialized during index building")
+            
             # Initialize LLM
             self.llm = ModelFactory.create_llm_model(
                 current_config,
@@ -234,7 +249,15 @@ class EnhancedAdaptiveRAGSystem:
         if self.llm:
 
             self.response_template = """
-You are a helpful technical support assistant. Your goal is to provide accurate and contextual answers based on the available data and conversation history.
+You are a friendly and knowledgeable technical support assistant who helps people understand defect information in a conversational, human way. Your goal is to provide helpful insights while being approachable and easy to understand.
+
+CRITICAL HTML FORMATTING REQUIREMENTS:
+1. ALWAYS write complete paragraphs: Each <p></p> must contain a full sentence or thought
+2. NEVER put <strong></strong> tags on separate lines - they must be INLINE within sentences
+3. CORRECT: "<p>I found several <strong>accessibility issues</strong> that need attention.</p>"
+4. WRONG: "<p>I found several</p><p><strong>accessibility issues</strong></p><p>that need attention.</p>"
+5. Keep all HTML tags on the SAME LINE as the text they contain
+6. Write flowing, natural sentences with emphasis INSIDE them
 
 Previous Conversation Context:
 {conversation_context}
@@ -251,23 +274,108 @@ Pattern Analysis:
 Current User Query: {query}
 
 RESPONSE GUIDELINES:
-1. If the user is asking about previous questions or context (like "what did I ask?", "tell me again", "repeat that"), refer to the conversation context above and provide a clear, direct answer.
 
-2. If the query is about technical issues, defects, or data analysis, provide a structured response with relevant document references with a good explanation of the documents and important info that needs to be addressed.
+1. BE CONVERSATIONAL AND HUMAN
+- Write like you're having a friendly conversation with a colleague
+- Use natural language, not robotic bullet points
+- Show personality and be engaging
+- Use transitional phrases like "I found some interesting things..." or "Here's what stood out to me..."
 
-3. If the query is completely unrelated to the available technical data (like food, weather, entertainment), simply respond: "Sorry, I can only help with technical issues and data analysis based on the available documents. Please ask questions related to defects, bugs, system issues, or data analysis."
+2. PROVIDE CONTEXT AND INSIGHTS
+- Don't just list data - explain what it means
+- Highlight patterns and trends you notice
+- Compare severity levels and explain their significance
+- Mention any concerning trends or positive findings
 
-4. Keep responses concise and focused. Only use detailed sections (Summary, Specific Details, Recommendations) when the query specifically requests comprehensive analysis and please be able to answer all the things based on the internet data too.
+3. STRUCTURE NATURALLY
+- Start with a friendly opening that summarizes what you found
+- Group related issues together with explanatory text
+- Use paragraphs with clear topic sentences
+- End with actionable insights or key takeaways
 
-5. For follow-up questions or clarifications, provide direct answers without unnecessary structure.
+4. BE HELPFUL AND INFORMATIVE
+- Include defect IDs naturally in sentences (not as separate bullet points)
+- Explain technical terms when needed
+- Provide context about severity levels and what they mean
+- Suggest patterns or next steps when appropriate
 
-Format your response appropriately:
-- For memory/context questions: Direct, conversational answer
-- For simple technical questions: Brief, focused response with document references
-- For complex analysis requests: Structured response with sections
-- For unrelated questions: Polite redirect message
+WRITING STYLE EXAMPLES:
 
-Response:
+For Simple Greetings:
+User: "Hello" → "<p>Hi there! I'm your defect analysis assistant. How can I help you today?</p>"
+User: "Thanks" → "<p>You're welcome! Let me know if you need help with anything else.</p>"
+User: "How are you?" → "<p>I'm doing well and ready to help! What would you like to know about the system defects?</p>"
+
+For Defect Queries - CORRECT FORMATTING WITH EMPHASIS:
+"<p>Looking at the mobile app defects, I found several <strong>accessibility issues</strong> that need attention. The most serious is a <strong>critical startup crash</strong> (LIFE-1095) marked as <strong>urgent priority</strong> - users literally can't open the app.</p>
+<p>I also noticed some <strong>accessibility problems</strong> with low contrast text (LIFE-1013 and LIFE-1041). While these are <strong>low severity</strong>, they're marked <strong>urgent</strong> and <strong>medium priority</strong> respectively, which makes sense for usability.</p>
+<p>On the <strong>performance side</strong>, there's excessive battery usage (LIFE-1060) that's a <strong>medium severity issue</strong> but could really impact user experience over time.</p>"
+
+WRONG - DO NOT DO THIS:
+"<p>First off, there are a few</p>
+<p><strong>accessibility issues</strong></p>
+<p>that need attention.</p>"
+
+CRITICAL FORMATTING RULES:
+1. ALWAYS keep <strong></strong> tags INSIDE the paragraph where they belong
+2. NEVER put emphasis tags on separate lines or in separate paragraphs
+3. Write complete sentences with emphasis inline: "<p>I found a <strong>critical issue</strong> that affects users.</p>"
+4. DO NOT break sentences across paragraphs - each <p></p> should contain complete thoughts
+
+FORMAT GUIDELINES:
+- Use <p></p> for complete paragraphs - NEVER break a thought mid-sentence
+- Each paragraph should contain one complete idea or topic
+- Use <strong></strong> for emphasis WITHIN paragraphs, not as separate elements
+- Include defect IDs naturally within sentences
+- Write complete, flowing sentences without artificial breaks
+- Example: "<p>I found a <strong>critical issue</strong> where the app crashes on startup (LIFE-1095). This is marked as urgent priority.</p>"
+- NEVER write: "<p>First off, there's a</p><p><strong>critical issue</strong></p>"
+
+RESPONSE APPROACH:
+
+FIRST - ANALYZE THE QUERY TYPE:
+1. **Simple Greetings/Chitchat** (hello, hi, how are you, thanks, etc.):
+   - Respond with a brief, friendly greeting in 1-2 sentences
+   - Do NOT include defect information unless specifically asked
+   - Example: "<p>Hello! I'm here to help you with any questions about defects or technical issues. What would you like to know?</p>"
+
+2. **Defect/Technical Queries** (anything about bugs, issues, defects, problems):
+   - Use the full conversational analysis approach below
+   - Include relevant defect information and insights
+
+3. **Off-topic Questions** (weather, politics, etc.):
+   - Politely redirect: "<p>I can only help with questions about documented defects and technical issues. What would you like to know about the system?</p>"
+
+FOR DEFECT/TECHNICAL QUERIES:
+1. Start with a friendly, contextual opening
+2. Organize findings into logical themes/groups
+3. Explain what the data means, not just what it says
+4. Include severity context and business impact
+5. End with insights, patterns, or recommendations
+
+TONE: Friendly, knowledgeable, conversational, helpful
+AVOID: Robotic bullet points, dry data dumps, overly formal language
+INCLUDE: Natural explanations, context, insights, personality
+
+FORMATTING FOR EMPHASIS:
+- Use <strong></strong> to emphasize:
+  * Severity levels: <strong>Critical</strong>, <strong>High</strong>, <strong>Medium</strong>, <strong>Low</strong>
+  * Priority levels: <strong>Urgent</strong>, <strong>High Priority</strong>, <strong>Medium Priority</strong>
+  * Issue categories: <strong>accessibility problems</strong>, <strong>functionality issues</strong>, <strong>performance issues</strong>
+  * Key defect statuses: <strong>resolved</strong>, <strong>open</strong>, <strong>in progress</strong>
+  * Important timeframes: <strong>within a day</strong>, <strong>recently found</strong>
+  * Critical phrases: <strong>major issue</strong>, <strong>prevents users from</strong>, <strong>impacts usability</strong>
+
+EXAMPLES WITH PROPER EMPHASIS:
+"I found a <strong>critical issue</strong> where the app crashes on startup (LIFE-1095). This is marked as <strong>urgent priority</strong> since users can't even access the app."
+
+"There are several <strong>accessibility problems</strong> including low contrast text (LIFE-1013, LIFE-1041). While marked as <strong>low severity</strong>, they have <strong>urgent</strong> and <strong>medium priority</strong> respectively."
+
+"On the <strong>performance side</strong>, there's excessive battery usage (LIFE-1060) which is a <strong>medium severity issue</strong> that could impact user experience significantly."
+
+Remember: You're not just reporting data - you're helping someone understand what's happening with their system in a friendly, human way.
+
+Response (start directly with HTML):
 """
 
             self.prompt = PromptTemplate(
@@ -427,20 +535,37 @@ Response:
 
     def _auto_load_and_process_data(self):
         """Automatically detect and load data from file or directory"""
-        logger.info(f"Auto-loading data from: {self.data_source}")
-        
-        data_path = Path(self.data_source)
-        
-        if data_path.is_file():
-            # Single file
-            self._load_single_file(data_path)
-        elif data_path.is_dir():
-            # Directory - scan for supported files
-            self._load_from_directory(data_path)
-        else:
-            logger.error(f"Data source not found: {self.data_source}")
+        try:
+            logger.info(f"Auto-loading data from: {self.data_source}")
+            
+            data_path = Path(self.data_source)
+            
+            if not data_path.exists():
+                raise FileNotFoundError(f"Data source not found: {self.data_source}")
+                
+            if data_path.is_file():
+                logger.info(f"Loading single file: {data_path}")
+                self._load_single_file(data_path)
+            elif data_path.is_dir():
+                logger.info(f"Loading from directory: {data_path}")
+                self._load_from_directory(data_path)
+            else:
+                raise ValueError(f"Data source is neither file nor directory: {self.data_source}")
+                
+            # Verify data was loaded
+            if self.data is None or self.data.empty:
+                raise RuntimeError("No data was loaded")
+                
+            # Verify we have the necessary columns
+            if "combined_text" not in self.data.columns:
+                raise ValueError("Required column 'combined_text' missing from loaded data")
+                
+            logger.info(f"Successfully loaded {len(self.data)} records with required columns")
+            
+        except Exception as e:
+            logger.error(f"Error during data loading: {e}", exc_info=True)
             self._create_dummy_data()
-            return
+            raise RuntimeError(f"Failed to load data: {str(e)}")
             
         if self.data is not None and "combined_text" in self.data.columns:
             logger.info("Building index from loaded data...")
@@ -620,46 +745,197 @@ Response:
 
     def initialize_system(self, data_source: str = None):
         """Manually initialize the system with optional new data source"""
-        if data_source:
-            self.data_source = data_source
-        
-        logger.info(f"Manually initializing system with: {self.data_source}")
-        self._auto_load_and_process_data()
+        try:
+            if data_source:
+                logger.info(f"Updating data source from {self.data_source} to {data_source}")
+                self.data_source = data_source
+            
+            logger.info(f"Manually initializing system with data source: {self.data_source}")
+            
+            # Verify data source exists
+            if not os.path.exists(self.data_source):
+                raise FileNotFoundError(f"Data source not found at: {self.data_source}")
+                
+            self._auto_load_and_process_data()
+            
+            # Verify initialization was successful
+            if not hasattr(self, '_documents') or not self._documents:
+                raise RuntimeError("No documents were loaded during initialization")
+                
+            if not hasattr(self, 'vector_store') or not self.vector_store:
+                raise RuntimeError("Vector store failed to initialize")
+                
+            logger.info(f"System initialized successfully with {len(self._documents)} documents")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize system: {e}", exc_info=True)
+            raise
 
     def get_system_status(self) -> Dict[str, Any]:
         """Get current system status and loaded data information"""
-        return {
-            'data_source': self.data_source,
-            'loaded_files': self.loaded_files,
-            'files_loaded_count': len(self.loaded_files) if self.loaded_files else 0,
-            'total_documents': self.total_documents,
-            'vector_store_ready': hasattr(self, 'vector_store') and self.vector_store is not None and hasattr(self.vector_store, 'collection') and self.vector_store.collection is not None,
-            'models_ready': {
+        try:
+            # Check vector store status
+            vector_store_stats = {}
+            vector_store_ready = False
+            if hasattr(self, 'vector_store') and self.vector_store is not None:
+                try:
+                    vector_store_stats = self.vector_store.get_collection_stats()
+                    vector_store_ready = (hasattr(self.vector_store, 'collection') 
+                                        and self.vector_store.collection is not None)
+                except Exception as e:
+                    logger.error(f"Error getting vector store stats: {e}")
+                    vector_store_stats = {"error": str(e)}
+            
+            # Check model status
+            models_ready = {
                 'embedding_model': self.embedding_model is not None,
                 'llm': self.llm is not None,
                 'sentence_transformer': getattr(self, 'sentence_transformer', None) is not None,
-                'reranker': getattr(self, 'reranker', None) is not None if self.use_reranker else False
+                'reranker': getattr(self, 'reranker', None) is not None if self.use_reranker else True
             }
-        }
+            
+            # Prepare basic status
+            status = {
+                'data_source': self.data_source,
+                'loaded_files': self.loaded_files or [],
+                'files_loaded_count': len(self.loaded_files) if self.loaded_files else 0,
+                'total_documents': self.total_documents,
+                'vector_store_ready': vector_store_ready,
+                'vector_store_stats': vector_store_stats,
+                'models_ready': models_ready
+            }
+            
+            # Add computed status
+            status['system_ready'] = (
+                vector_store_ready 
+                and status['files_loaded_count'] > 0 
+                and all(models_ready.values())
+            )
+            
+            # Add detailed status message
+            if not status['system_ready']:
+                if not vector_store_ready:
+                    status['status_message'] = "Vector store not ready"
+                elif status['files_loaded_count'] == 0:
+                    status['status_message'] = "No files loaded"
+                elif not all(models_ready.values()):
+                    unready_models = [name for name, ready in models_ready.items() if not ready]
+                    status['status_message'] = f"Models not ready: {', '.join(unready_models)}"
+            else:
+                status['status_message'] = "System fully operational"
+                
+            return status
+            
+        except Exception as e:
+            logger.error(f"Error getting system status: {e}", exc_info=True)
+            return {
+                'error': str(e),
+                'system_ready': False,
+                'status_message': f"Error getting system status: {str(e)}"
+            }
 
     def reload_data(self):
         """Reload data from the current data source"""
-        logger.info("Reloading data...")
-        self.vector_store.reset()
-        self.loaded_files = []
-        self.total_documents = 0
-        self._auto_load_and_process_data()
+        try:
+            logger.info("Reloading data...")
+            
+            # Reset state
+            self.loaded_files = []
+            self.total_documents = 0
+            
+            # Reset vector store if it exists
+            if self.vector_store and hasattr(self.vector_store, 'reset'):
+                logger.info("Resetting vector store")
+                self.vector_store.reset()
+            else:
+                logger.info("No existing vector store to reset")
+                
+            # Load and process new data
+            self._auto_load_and_process_data()
+            
+        except Exception as e:
+            logger.error(f"Error reloading data: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to reload data: {str(e)}")
 
     def _build_index(self):
         """Build vector store with documents"""
-        if self.data is None or "combined_text" not in self.data.columns:
-            logger.error("Cannot build index: data or combined_text column missing")
-            return
+        try:
+            if self.data is None or "combined_text" not in self.data.columns:
+                logger.error("Cannot build index: data or combined_text column missing")
+                return
 
-        logger.info("Building index from Excel data...")
-        
-        # Reset the vector store
-        self.vector_store.reset()
+            logger.info("Building index from Excel data...")
+            
+            # Check if embedding model is available
+            if not self.embedding_model:
+                raise RuntimeError("Embedding model not initialized")
+            
+            # Ensure vector store is initialized
+            if not self.vector_store:
+                # Create embedding function wrapper
+                def embedding_function_wrapper(text):
+                    if isinstance(text, list):
+                        return [self.embedding_model.embed_query(t) for t in text]
+                    return self.embedding_model.embed_query(text)
+                
+                # Import and initialize vector store - handle different import paths
+                root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                if root_dir not in sys.path:
+                    sys.path.insert(0, root_dir)  # Use insert(0, ...) to prioritize this path
+                
+                # Debug: Print the paths being checked
+                logger.info(f"Root directory: {root_dir}")
+                logger.info(f"Current sys.path entries: {[p for p in sys.path if 'Ragineer' in p]}")
+                
+                # Check if the db module exists
+                db_path = os.path.join(root_dir, 'db')
+                simple_store_path = os.path.join(db_path, 'simple_store.py')
+                logger.info(f"Checking for db module at: {db_path}")
+                logger.info(f"Checking for simple_store.py at: {simple_store_path}")
+                logger.info(f"DB path exists: {os.path.exists(db_path)}")
+                logger.info(f"simple_store.py exists: {os.path.exists(simple_store_path)}")
+                
+                try:
+                    from db.simple_store import SimpleVectorStore
+                    logger.info("Successfully imported SimpleVectorStore")
+                except ImportError as e:
+                    logger.error(f"Failed to import SimpleVectorStore: {e}")
+                    # Try alternative import path
+                    try:
+                        import importlib.util
+                        spec = importlib.util.spec_from_file_location("simple_store", simple_store_path)
+                        simple_store_module = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(simple_store_module)
+                        SimpleVectorStore = simple_store_module.SimpleVectorStore
+                        logger.info("Successfully imported SimpleVectorStore using direct file import")
+                    except Exception as e2:
+                        logger.error(f"Failed direct import as well: {e2}")
+                        raise RuntimeError("Vector store module not found. Please check installation.")
+                
+                # Create the vector store with absolute path
+                persist_dir = os.path.join(root_dir, "db", "chroma_db")
+                os.makedirs(persist_dir, exist_ok=True)
+                
+                logger.info(f"Initializing vector store with persist_directory: {persist_dir}")
+                self.vector_store = SimpleVectorStore(
+                    collection_name="documents",
+                    persist_directory=persist_dir,
+                    embedding_function=embedding_function_wrapper
+                )
+                logger.info("Vector store initialized successfully")
+                logger.info("Vector store initialized")
+            
+            # Reset the vector store
+            if hasattr(self.vector_store, 'reset'):
+                logger.info("Resetting vector store")
+                self.vector_store.reset()
+            else:
+                logger.error("Vector store missing reset method")
+                raise RuntimeError("Invalid vector store configuration")
+                
+        except Exception as e:
+            logger.error(f"Error building index: {e}", exc_info=True)
+            raise RuntimeError(f"Failed to build index: {str(e)}")
 
         # Prepare documents and metadata
         documents = self.data["combined_text"].tolist()
@@ -687,15 +963,8 @@ Response:
                     
             chunk_metadata.append(metadata)
 
-        # Add documents to vector store
-        self.vector_store.add_documents(
-            texts=documents,
-            metadata=chunk_metadata
-        )
-        
-        logger.info(f"Added {len(documents)} documents to vector store")
-
-        # Build sentence transformer embeddings if enabled
+        # Generate embeddings for documents if using sentence transformers
+        embeddings = None
         if self.use_sentence_transformers and self.sentence_transformer:
             try:
                 logger.info("Generating sentence transformer embeddings...")
@@ -705,12 +974,25 @@ Response:
                 logger.info(
                     f"Generated {len(self.st_embeddings)} sentence transformer embeddings"
                 )
+                # Use these embeddings for the vector store
+                embeddings = self.st_embeddings
             except Exception as e:
                 logger.error(f"Failed to generate sentence transformer embeddings: {e}")
                 self.st_embeddings = None
+                embeddings = None
 
-        # Note: ChromaDB handles embeddings internally, so we don't need to generate them manually
-        # The vector store will handle embedding generation when documents are added
+        # Add documents to vector store
+        try:
+            # Add documents to vector store (it will handle embeddings appropriately)
+            self.vector_store.add_documents(
+                texts=documents,
+                metadata=chunk_metadata,
+                embeddings=embeddings  # May be None, and that's okay
+            )
+            
+            logger.info(f"Added {len(documents)} documents to vector store")
+        except Exception as e:
+            logger.error(f"Error adding documents to vector store: {e}", exc_info=True)
         
         logger.info(f"Index built successfully with {len(documents)} documents")
 
@@ -789,19 +1071,40 @@ Response:
             return []
 
     def _embeddings_retrieve(self, query: str, k: int = 10) -> List[Dict[str, Any]]:
-        """Retrieve using vector store"""
+        """Retrieve using vector store with optional pre-computed embeddings"""
         logger.info(f"Performing vector store retrieval for: {query[:100]}...")
 
         try:
+            # Generate query embedding if using sentence transformers
+            query_embedding = None
+            if self.use_sentence_transformers and self.sentence_transformer:
+                try:
+                    query_embedding = self.sentence_transformer.encode(query, convert_to_tensor=False)
+                    if isinstance(query_embedding, np.ndarray):
+                        query_embedding = query_embedding.tolist()
+                    logger.info("Using sentence transformer for query embedding")
+                except Exception as e:
+                    logger.error(f"Error generating query embedding with sentence transformer: {e}")
+                    query_embedding = None
+            
             # Search in vector store
-            results = self.vector_store.search(query=query, k=k)
+            results = self.vector_store.search(
+                query=query, 
+                k=k,
+                query_embedding=query_embedding
+            )
+            
+            if not results:
+                logger.warning("No results returned from vector store search")
+                return []
             
             retrieved_docs = []
             for hit in results:
+                # Handle the updated format from our enhanced SimpleVectorStore
                 retrieved_docs.append({
                     "id": hit['id'],
-                    "content": hit['content'],
-                    "similarity": 1.0 - hit['similarity'],  # Convert distance to similarity
+                    "content": hit.get('metadata', {}),
+                    "similarity": hit.get('similarity', 0.0),  # Already converted to similarity in SimpleVectorStore
                     "retrieval_method": "vector_store",
                     "text": hit['text']
                 })
@@ -962,37 +1265,19 @@ Response:
     def format_retrieved_document_for_llm(self, doc: Dict) -> str:
         """Format a retrieved document for inclusion in the LLM context"""
 
-        formatted_content = [f"DOCUMENT ID: {doc['id']}"]
+        formatted_content = []
 
-        # Add retrieval method and scores
-
-        if "retrieval_method" in doc:
-
-            formatted_content.append(f"Retrieval Method: {doc['retrieval_method']}")
-
-        if "similarity" in doc:
-
-            formatted_content.append(f"Similarity Score: {doc['similarity']:.4f}")
-
-        if "rerank_score" in doc:
-
-            formatted_content.append(f"Rerank Score: {doc['rerank_score']:.4f}")
+        # Skip document IDs, retrieval methods, and scores for cleaner user experience
+        # Only include the actual content data
 
         if "content" not in doc or not doc["content"]:
-
-            return (
-                "\n".join(formatted_content)
-                + "\nNo content available for this document."
-            )
+            return "No content available for this document."
 
         for key, value in doc["content"].items():
-
             value_str = str(value) if value is not None else ""
 
             if value_str.strip():
-
                 formatted_key = key.replace("_", " ").title()
-
                 formatted_content.append(f"{formatted_key}: {value_str}")
 
         return "\n".join(formatted_content)
@@ -1062,7 +1347,7 @@ Response:
 
         return analysis
 
-    def generate_response(self, query: str, k: int = 3) -> Dict[str, Any]:
+    def generate_response(self, query: str, k: int = 5) -> Dict[str, Any]:
         if not self.chain:
 
             logger.error("Cannot generate response: LLM chain not initialized.")
@@ -1254,7 +1539,7 @@ Response:
         
         return ''.join(html_parts)
 
-    async def generate_response_stream(self, query: str, k: int = 3):
+    async def generate_response_stream(self, query: str, k: int = 5):
         if not self.chain:
             logger.error("Cannot generate response: LLM chain not initialized.")
             yield {
@@ -1269,7 +1554,46 @@ Response:
         # Add user message to chat memory
         self.chat_memory.add_user_message(query)
 
-        # Generate dataset overview and retrieve documents
+        # Check if this is a simple greeting/chitchat before doing expensive retrieval
+        query_lower = query.lower().strip()
+        simple_greetings = ['hello', 'hi', 'hey', 'thanks', 'thank you', 'how are you', 'good morning', 'good afternoon', 'good evening']
+        
+        if any(greeting in query_lower for greeting in simple_greetings) and len(query.split()) <= 4:
+            # Handle simple greetings without retrieval
+            logger.info(f"Detected simple greeting, responding without document retrieval")
+            
+            if 'hello' in query_lower or 'hi' in query_lower or 'hey' in query_lower:
+                response_text = "<p>Hi there! I'm your defect analysis assistant. How can I help you today?</p>"
+            elif 'thanks' in query_lower or 'thank you' in query_lower:
+                response_text = "<p>You're welcome! Let me know if you need help with anything else.</p>"
+            elif 'how are you' in query_lower:
+                response_text = "<p>I'm doing well and ready to help! What would you like to know about the system defects?</p>"
+            else:
+                response_text = "<p>Hello! I'm here to help you with any questions about defects or technical issues. What would you like to know?</p>"
+            
+            # Add assistant response to chat memory
+            self.chat_memory.add_assistant_message(response_text)
+            
+            # Stream the simple response
+            yield {
+                "type": "formatted_token",
+                "content": response_text,
+                "done": False
+            }
+            
+            # Send completion signal
+            yield {
+                "type": "done",
+                "content": "",
+                "done": True,
+                "metadata": {
+                    "query": query,
+                    "response_type": "simple_greeting"
+                }
+            }
+            return
+
+        # For technical queries, proceed with full retrieval and analysis
         try:
             dataset_overview_summary = self._generate_dataset_overview_summary()
             retrieved_docs = self.retrieve(query, k)
@@ -1340,66 +1664,137 @@ Response:
             
             response_text = response['text'] if isinstance(response, dict) else response
 
+            # Clean up the response to remove any unwanted prefixes/suffixes the LLM might add
+            response_text = response_text.strip()
+            
+            # Remove common unwanted prefixes
+            unwanted_prefixes = ['"html', '```html', 'html', '```', '"']
+            for prefix in unwanted_prefixes:
+                if response_text.startswith(prefix):
+                    response_text = response_text[len(prefix):].strip()
+            
+            # Remove common unwanted suffixes
+            unwanted_suffixes = ['```', '"']
+            for suffix in unwanted_suffixes:
+                if response_text.endswith(suffix):
+                    response_text = response_text[:-len(suffix)].strip()
+            
+            # CRITICAL FIX: Normalize HTML to prevent standalone bold lines and punctuation fragments
+            # Strategy: parse paragraph blocks, then merge single-strong or punctuation-only paragraphs into previous paragraph
+            import re
+
+            # Normalize tag syntax without stripping surrounding text spaces
+            # Keep spaces outside tags intact to avoid words sticking together
+            response_text = re.sub(r'<\s*(\w+)\s*>', r'<\1>', response_text)   # opening tags
+            response_text = re.sub(r'</\s*(\w+)\s*>', r'</\1>', response_text)  # closing tags
+
+            # Ensure a space before an opening emphasis tag if it follows a word character
+            response_text = re.sub(r'(?<=\w)<(strong|em)>', r' <\1>', response_text)
+            # Ensure a space after a closing emphasis tag if followed by a word character
+            response_text = re.sub(r'</(strong|em)>(?=\w)', r'</\1> ', response_text)
+            # Avoid spaces before punctuation like , . ; :
+            response_text = re.sub(r'\s+([,.;:])', r'\1', response_text)
+
+            # Wrap any strong/em segments that appear between paragraphs into their own paragraph
+            # e.g., </p>\n<strong>text</strong>\n<p> => </p><p><strong>text</strong></p><p>
+            response_text = re.sub(r'(</p>)\s*(<(?:strong|em)[^>]*>.*?</(?:strong|em)>)\s*(?=<p|$)', r'\1<p>\2</p>', response_text, flags=re.DOTALL)
+            # Also handle when a strong/em block appears at the start before any <p>
+            response_text = re.sub(r'^\s*(<(?:strong|em)[^>]*>.*?</(?:strong|em)>)\s*(?=<p|$)', r'<p>\1</p>', response_text, flags=re.DOTALL)
+
+            # Extract paragraphs preserving order
+            paras = re.findall(r'<p>(.*?)</p>', response_text, flags=re.DOTALL)
+
+            def strip_tags(s: str) -> str:
+                return re.sub(r'<[^>]+>', '', s)
+
+            def is_strong_only(s: str) -> bool:
+                return re.fullmatch(r'\s*<strong>.*?</strong>\s*', s, flags=re.DOTALL) is not None
+
+            def is_small_fragment(plain: str) -> bool:
+                t = plain.strip()
+                if not t:
+                    return True
+                # punctuation or conjunction fragments
+                small_tokens = {',', '.', ';', ':', 'and', 'but', 'or'}
+                if t in small_tokens:
+                    return True
+                if t[0] in ',.;:' or t.lower() in small_tokens:
+                    return True
+                # one-to-three word short fragments commonly split
+                return len(t.split()) <= 3
+
+            normalized_paras: list[str] = []
+            for i, p in enumerate(paras):
+                plain = strip_tags(p)
+                # Merge strong-only or tiny fragments into previous paragraph
+                if (is_strong_only(p) or is_small_fragment(plain)) and normalized_paras:
+                    prev_inner = re.findall(r'<p>(.*?)</p>', normalized_paras[-1], flags=re.DOTALL)
+                    prev_inner = prev_inner[0] if prev_inner else ''
+
+                    # Prepare join text (keep strong tags if present)
+                    join_text = p.strip()
+                    join_plain = strip_tags(join_text)
+
+                    # Decide spacing: no space before punctuation like , . ; :
+                    if join_plain and join_plain[0] in ',.;:':
+                        new_prev = f"{prev_inner}{join_plain}"
+                    else:
+                        # default with a space
+                        new_prev = f"{prev_inner} {join_text}"
+
+                    normalized_paras[-1] = f"<p>{new_prev}</p>"
+                else:
+                    # Start a new proper paragraph
+                    normalized_paras.append(f"<p>{p.strip()}</p>")
+
+            # Remove empty paragraphs and tidy spaces inside paragraphs
+            cleaned = []
+            for para in normalized_paras:
+                inner = re.findall(r'<p>(.*?)</p>', para, flags=re.DOTALL)
+                inner_text = inner[0] if inner else ''
+                inner_text = re.sub(r'\s+', ' ', inner_text).strip()
+                if inner_text:
+                    cleaned.append(f"<p>{inner_text}</p>")
+
+            response_text = ''.join(cleaned)
+            
+            logger.info(f"Cleaned and normalized response_text preview: {response_text[:200]}...")
+
             # Add assistant response to chat memory
             self.chat_memory.add_assistant_message(response_text)
 
-            # Format the response properly before streaming
-            formatted_response = self._format_response_for_streaming(response_text)
-
-            # First format the entire response as HTML
+            # Stream the response token by token for better UX
+            import asyncio
+            
+            # Stream the response in natural chunks that preserve formatting
+            # Split by complete paragraph tags to maintain structure
             import re
-            formatted_html = self._html_format_response(response_text)
             
-            # Split the formatted HTML into meaningful chunks for streaming
-            # This approach preserves complete HTML tags and word boundaries
-            chunks = []
-            current_chunk = ""
-            in_tag = False
+            # Find complete paragraphs with opening and closing tags
+            paragraph_pattern = r'(<p>.*?</p>)'
+            paragraphs = re.findall(paragraph_pattern, response_text, re.DOTALL)
             
-            i = 0
-            while i < len(formatted_html):
-                char = formatted_html[i]
-                
-                if char == '<':
-                    # If we have content in current_chunk, add it
-                    if current_chunk.strip():
-                        chunks.append(current_chunk)
-                        current_chunk = ""
-                    in_tag = True
-                    current_chunk += char
-                elif char == '>' and in_tag:
-                    in_tag = False
-                    current_chunk += char
-                    # Add complete tag as a chunk
-                    chunks.append(current_chunk)
-                    current_chunk = ""
-                elif in_tag:
-                    current_chunk += char
-                elif char == ' ':
-                    if current_chunk.strip():
-                        current_chunk += char
-                        chunks.append(current_chunk)
-                        current_chunk = ""
-                else:
-                    current_chunk += char
-                
-                i += 1
+            # If no paragraphs found, send the entire response as one chunk
+            if not paragraphs:
+                yield {
+                    "type": "formatted_token",
+                    "content": response_text,
+                    "done": False
+                }
+            else:
+                # Send each complete paragraph
+                for paragraph in paragraphs:
+                    if paragraph.strip():
+                        yield {
+                            "type": "formatted_token",
+                            "content": paragraph,
+                            "done": False
+                        }
+                        # Small delay between paragraphs for smooth streaming
+                        await asyncio.sleep(0.1)
             
-            # Add any remaining content
-            if current_chunk.strip():
-                chunks.append(current_chunk)
-            
-            # Stream the formatted chunks
-            for chunk in chunks:
-                if chunk.strip():  # Only send non-empty chunks
-                    yield {
-                        "type": "formatted_token",
-                        "content": chunk,
-                        "done": False
-                    }
-                    # Add a small delay for realistic streaming effect
-                    import asyncio
-                    await asyncio.sleep(0.05)  # 50ms delay between chunks
+            # Small final delay
+            await asyncio.sleep(0.05)
 
             # Send final completion signal
             yield {
@@ -1462,3 +1857,33 @@ def quick_start(data_directory: str = "data") -> EnhancedAdaptiveRAGSystem:
     logger.info(f"✅ System ready! Loaded {total_docs} documents from {len(loaded_files)} files")
     
     return system
+
+def reset_vector_store(rag_system: EnhancedAdaptiveRAGSystem) -> bool:
+    """
+    Reset the vector store to clear all indexed documents.
+    
+    Args:
+        rag_system: The RAG system instance
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        logger.info("Resetting vector store...")
+        if rag_system.vector_store:
+            rag_system.vector_store.reset()
+            logger.info("Vector store has been reset successfully")
+            
+            # Reset other related variables
+            rag_system.st_embeddings = None
+            rag_system.loaded_files = []
+            rag_system.total_documents = 0
+            rag_system.chunk_to_original_doc_mapping = []
+            
+            return True
+        else:
+            logger.error("Vector store not initialized")
+            return False
+    except Exception as e:
+        logger.error(f"Error resetting vector store: {e}", exc_info=True)
+        return False

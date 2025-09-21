@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.tox/
+.coverage*
+coverage.xml
+htmlcov/
+
+# Environments
+.env
+.env.*
+myvenv/
+.venv/
+venv/
+env/
+
+# Build & dist
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs & runtime
+*.log
+*.pid
+*.sqlite3
+backend/rag_system_api.log
+
+# OS/editor/IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Node/Frontend artifacts (if any in future)
+node_modules/
+.parcel-cache/
+.cache/
+
+# Project data folders (ignored contents, keep dir via .gitkeep)
+db/chroma_db/**
+!db/chroma_db/.gitkeep
+db/chat_memory/**
+!db/chat_memory/.gitkeep
+
+# Compiled notebooks or checkpoints
+.ipynb_checkpoints/
+
+# Misc
+*.bak
+*.tmp
+~$*

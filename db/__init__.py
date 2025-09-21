@@ -1,3 +1,8 @@
-from .simple_store import SimpleVectorStore
+"""
+Database module for vector storage and retrieval
+"""
 
-__all__ = ['simple_storage']
+from .simple_store import SimpleVectorStore
+from .chat_memory import ChatMemoryStore
+
+__all__ = ['SimpleVectorStore', 'ChatMemoryStore']

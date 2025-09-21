@@ -18,22 +18,22 @@ from typing import Optional
 import sys
 import os
 
-# Add paths for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # Root directory
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # Backend directory
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+root_dir = os.path.dirname(parent_dir)
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
+# Local imports
 from schema.pydantic_models import InitializeRequest, RebuildIndexRequest, QueryRequest
-
-# RAG Imports
-from rag_system import EnhancedAdaptiveRAGSystem
-from rag_system import make_serializable
+from rag_system import EnhancedAdaptiveRAGSystem, make_serializable
 
 
 # Configure logging to file only
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    filename="../rag_system_api.log",  # Move log to parent directory to avoid watchfiles monitoring
+    filename=os.path.join(root_dir, "rag_system_api.log"),  # Use absolute path for log file
     filemode="a",
 )
 
@@ -44,6 +44,9 @@ app = FastAPI(
     description="Advanced RAG system with multiple retrieval methods and re-ranking",
     version="2.0.0",
 )
+
+# Track initialization status
+initialization_complete = False
 
 # This is for passing all the hosts where requests are being sent
 app.add_middleware(
@@ -63,6 +66,75 @@ if os.path.exists(frontend_dir):
 
 # Global variable to hold the RAG system instance
 rag_system: Optional[EnhancedAdaptiveRAGSystem] = None
+
+# Auto-initialize RAG system on startup
+def initialize_on_startup():
+    global rag_system, initialization_complete
+    try:
+        logger.info("Auto-initializing RAG system on startup...")
+        
+        # Ensure data directory exists
+        data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+        logger.info(f"Looking for data directory at: {data_dir}")
+        if not os.path.exists(data_dir):
+            logger.error(f"Data directory not found at: {data_dir}")
+            raise FileNotFoundError(f"Data directory not found at: {data_dir}")
+        
+        # Check for Excel files
+        excel_files = [f for f in os.listdir(data_dir) if f.endswith('.xlsx')]
+        if not excel_files:
+            logger.error(f"No Excel files found in data directory: {data_dir}")
+            raise FileNotFoundError(f"No Excel files found in data directory: {data_dir}")
+            
+        logger.info(f"Found Excel files: {excel_files}")
+        
+        # Debug: Check for db module
+        root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        db_dir = os.path.join(root_dir, "db")
+        logger.info(f"Root directory: {root_dir}")
+        logger.info(f"DB directory: {db_dir}, exists: {os.path.exists(db_dir)}")
+        if os.path.exists(db_dir):
+            db_files = os.listdir(db_dir)
+            logger.info(f"Files in db directory: {db_files}")
+        
+        # Initialize RAG system with absolute path
+        rag_system = EnhancedAdaptiveRAGSystem(
+            data_source=data_dir,
+            auto_initialize=True,
+            use_sentence_transformers=True,
+            use_reranker=True,
+            temperature=0.7
+        )
+        
+        # Verify initialization
+        status = rag_system.get_system_status()
+        logger.info(f"System initialization status: {status}")
+        
+        if not status['vector_store_ready']:
+            raise RuntimeError("Vector store failed to initialize")
+            
+        if status['files_loaded_count'] == 0:
+            raise RuntimeError("No files were loaded during initialization")
+            
+        logger.info("RAG system initialized successfully on startup")
+        initialization_complete = True
+        
+    except Exception as e:
+        logger.error(f"Failed to auto-initialize RAG system: {e}", exc_info=True)
+        raise
+
+# Initialize on module load with error handling
+try:
+    initialize_on_startup()
+    logger.info("Module initialization complete")
+    # Ensure initialization_complete is set if we reach here
+    if rag_system is not None:
+        initialization_complete = True
+except Exception as e:
+    logger.error(f"Module initialization failed: {e}", exc_info=True)
+    initialization_complete = False
+    # Don't suppress the error - let it propagate
+    raise
 
 # Rate limiting for status calls
 import time
@@ -92,20 +164,24 @@ async def general_exception_handler(request: Request, exc: Exception):
 @app.post("/initialize")
 async def initialize_system(request: InitializeRequest):
     """Initialize the RAG system with specified configuration"""
-
     global rag_system
 
     try:
-
-        logger.info(f"Initializing RAG system with data source: {request.excel_file_path}")
-
+        # Validate data source path
+        data_source = request.excel_file_path
+        if not os.path.exists(data_source):
+            raise FileNotFoundError(f"Data source not found: {data_source}")
+            
+        logger.info(f"Initializing RAG system with data source: {data_source}")
+        
+        # Initialize RAG system
         rag_system = EnhancedAdaptiveRAGSystem(
-            data_source=request.excel_file_path,
+            data_source=data_source,
             temperature=request.temperature,
             concise_prompt=request.concise_prompt,
             use_sentence_transformers=request.use_sentence_transformers,
             use_reranker=request.use_reranker,
-            auto_initialize=True  # Auto-load data
+            auto_initialize=True
         )
 
         status = rag_system.get_system_status()
@@ -210,22 +286,57 @@ async def get_system_status(request: Request):
     logger.info(f"Status check from {client_ip}")
     
     if rag_system is None:
-        return {
+        return JSONResponse(content={
             "initialized": False,
-            "message": "RAG system not initialized"
-        }
+            "system_ready": False,
+            "status_message": "RAG system not initialized",
+            "vector_store_ready": False,
+            "files_loaded_count": 0,
+            "total_documents": 0,
+            "models_ready": {
+                "embedding_model": False,
+                "llm": False,
+                "sentence_transformer": False,
+                "reranker": False
+            }
+        })
     
     try:
         status = rag_system.get_system_status()
         status["initialized"] = True
-        return status
+        
+        # Ensure all required fields are present
+        default_status = {
+            "initialized": True,
+            "system_ready": False,
+            "status_message": "",
+            "vector_store_ready": False,
+            "files_loaded_count": 0,
+            "total_documents": 0,
+            "models_ready": {
+                "embedding_model": False,
+                "llm": False,
+                "sentence_transformer": False,
+                "reranker": False
+            }
+        }
+        
+        # Update default status with actual values
+        default_status.update(status)
+        
+        return JSONResponse(content=make_serializable(default_status))
         
     except Exception as e:
         logger.error(f"Error getting system status: {e}")
-        return {
-            "initialized": False,
-            "error": str(e)
-        }
+        return JSONResponse(
+            content={
+                "initialized": False,
+                "system_ready": False,
+                "status_message": f"Error getting system status: {str(e)}",
+                "error": str(e)
+            },
+            status_code=500
+        )
 
 
 @app.post("/reload")
@@ -270,13 +381,18 @@ async def query_system(request: QueryRequest):
 
     try:
         logger.info(f"Processing query: {request.query[:100]}...")
+        logger.info(f"Request k value: {request.k}")  # Debug log
+        
+        # Ensure k is set to a reasonable value if None
+        k_value = request.k if request.k is not None else 10
+        logger.info(f"Using k value: {k_value}")  # Debug log
 
         # Update temperature if provided
         if request.temperature is not None and rag_system.llm:
             rag_system.llm.temperature = request.temperature
 
         # Use RAG mode
-        response = rag_system.generate_response(request.query, request.k)
+        response = rag_system.generate_response(request.query, k_value)
         logger.info("Query processed successfully")
 
         return response
@@ -303,13 +419,18 @@ async def query_system_stream(request: QueryRequest):
     async def generate_stream():
         try:
             logger.info(f"Processing streaming query: {request.query[:100]}...")
+            logger.info(f"Streaming request k value: {request.k}")  # Debug log
+            
+            # Ensure k is set to a reasonable value if None
+            k_value = request.k if request.k is not None else 10
+            logger.info(f"Using streaming k value: {k_value}")  # Debug log
             
             # Update temperature if provided
             if request.temperature is not None and rag_system.llm:
                 rag_system.llm.temperature = request.temperature
 
             # Stream RAG response
-            async for chunk in rag_system.generate_response_stream(request.query, request.k):
+            async for chunk in rag_system.generate_response_stream(request.query, k_value):
                 yield f"data: {json.dumps(chunk)}\n\n"
                     
         except Exception as e:
@@ -399,13 +520,49 @@ async def retrieve_documents(request: QueryRequest):
 
 @app.get("/health")
 async def health_check():
-    """Simple health check endpoint"""
-
-    return {
-        "status": "healthy",
+    """Enhanced health check endpoint"""
+    
+    global rag_system, initialization_complete
+    
+    # Check if system is properly initialized
+    is_ready = False
+    system_status = None
+    
+    if rag_system is not None:
+        try:
+            # Try to get system status to verify it's working
+            system_status = rag_system.get_system_status()
+            is_ready = system_status.get('system_ready', False)
+            
+            # If system is ready but flag isn't set, update the flag
+            if is_ready and not initialization_complete:
+                initialization_complete = True
+                logger.info("Updated initialization_complete flag based on system status")
+                
+            logger.info("Health check: System is ready" if is_ready else "Health check: System not ready")
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            is_ready = False
+    
+    response = {
+        "status": "healthy" if is_ready else "initializing",
         "timestamp": datetime.datetime.now().isoformat(),
         "system_initialized": rag_system is not None,
+        "ready": is_ready,
+        "initialization_complete": initialization_complete
     }
+    
+    # Add system details if available
+    if system_status:
+        response["system_details"] = {
+            "total_documents": system_status.get('total_documents', 0),
+            "files_loaded_count": system_status.get('files_loaded_count', 0),
+            "vector_store_ready": system_status.get('vector_store_ready', False),
+            "models_ready": system_status.get('models_ready', {})
+        }
+    
+    logger.info(f"Health check response: {response}")
+    return response
 
 
 @app.get("/chat/history")
@@ -499,6 +656,49 @@ async def api_info():
             "GET /health": "Health check",
         },
     }
+
+
+@app.post("/reset-vector-store")
+async def reset_vector_store_endpoint():
+    """Reset the vector store to clear all indexed documents"""
+    
+    global rag_system
+    
+    if not rag_system:
+        raise HTTPException(
+            status_code=400, 
+            detail="RAG system is not initialized. Please initialize the system first."
+        )
+    
+    try:
+        logger.info("Resetting vector store...")
+        
+        # Import the function
+        from backend.rag_system import reset_vector_store
+        
+        # Reset the vector store
+        success = reset_vector_store(rag_system)
+        
+        if success:
+            status = rag_system.get_system_status()
+            logger.info("Vector store reset successfully")
+            
+            return {
+                "message": "Vector store reset successfully",
+                "status": status
+            }
+        else:
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to reset vector store. Check server logs for details."
+            )
+            
+    except Exception as e:
+        logger.error(f"Error resetting vector store: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to reset vector store: {str(e)}"
+        )
 
 # Global variables for rate limiting
 last_status_calls = {}  # Track last status call time per IP

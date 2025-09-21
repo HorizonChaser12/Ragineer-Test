@@ -5,7 +5,7 @@ from typing import Optional, Literal
 # Pydantic models for API requests
 class QueryRequest(BaseModel):
     query: str
-    k: Optional[int] = 3
+    k: Optional[int] = 10
     temperature: Optional[float] = None
     excel_file_path: Optional[str] = None
 

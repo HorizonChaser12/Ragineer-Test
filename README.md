@@ -74,6 +74,9 @@ myvenv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
+4. **ChromaDB Vector Store**
+The system now uses ChromaDB for efficient vector storage and semantic search. ChromaDB stores embeddings persistently on disk in the `db/chroma_db` directory. For more information, see `docs/chroma_integration.md`.
+
 4. **Add Your Data**
 Put testing data files in `data/` folder:
 - Excel (.xlsx): JIRA exports, defect reports

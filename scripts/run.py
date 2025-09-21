@@ -4,13 +4,26 @@ import os
 import time
 import webbrowser
 
+def setup_python_path():
+    # Get the project root directory
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Add project root to PYTHONPATH
+    if root_dir not in sys.path:
+        sys.path.insert(0, root_dir)
+        os.environ['PYTHONPATH'] = os.pathsep.join([root_dir, os.environ.get('PYTHONPATH', '')])
+
 def main():
     print("🚀 Starting Ragineer-Test Application...")
     
+    # Set up Python path
+    setup_python_path()
+    
     # Start FastAPI backend
     print("🔧 Starting backend server...")
-    backend_cmd = [sys.executable, '-m', 'uvicorn', 'backend.api_endpoints.api_app:app', '--host', '0.0.0.0', '--port', '8000', '--reload']
-    backend_proc = subprocess.Popen(backend_cmd)
+    env = os.environ.copy()
+    backend_cmd = [sys.executable, '-m', 'uvicorn', 'api_endpoints.api_app:app', '--host', '0.0.0.0', '--port', '8000', '--reload']
+    backend_proc = subprocess.Popen(backend_cmd, cwd=os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend'), env=env)
     
     # Start frontend server (simple HTTP server)
     print("🎨 Starting frontend server...")

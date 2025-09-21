@@ -57,6 +57,28 @@ class ChatMemoryStore:
         
         return "\n".join(context_parts)
     
+    def get_conversation_history(self, limit: int = 20) -> List[Dict]:
+        """Get conversation history with limit."""
+        return self.messages[-limit:] if limit > 0 else self.messages
+    
+    def get_session_stats(self) -> Dict:
+        """Get session statistics."""
+        return {
+            "total_messages": len(self.messages),
+            "user_messages": len([msg for msg in self.messages if msg["role"] == "user"]),
+            "assistant_messages": len([msg for msg in self.messages if msg["role"] == "assistant"]),
+            "session_start": self.messages[0]["timestamp"] if self.messages else None
+        }
+    
+    def clear_session(self):
+        """Clear current session."""
+        self.clear_memory()
+    
+    def list_sessions(self) -> List[str]:
+        """List available sessions."""
+        # For now, just return the current session
+        return ["current"]
+    
     def get_last_user_message(self) -> Optional[str]:
         """Get the last user message."""
         for msg in reversed(self.messages):
