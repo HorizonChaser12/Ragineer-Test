@@ -9,12 +9,12 @@ For everyone: how the pieces talk to each other
 
 ```mermaid
 flowchart LR
-    User([Tester / QA]) -->|Questions| UI[Web App (Fix Finder)]
-    UI -->|SSE Streaming| API[(FastAPI Backend)]
-    API -->|Retrieve| RAG[RAG Engine]
-    RAG -->|Embeddings / Search| VEC[(ChromaDB Vector Store)]
-    RAG -->|Load & Chunk| DATA[(Your Test Data)]
-    API -->|Answers (HTML)| UI
+  User([Tester / QA]) -->|"Questions"| UI["Web App (Fix Finder)"]
+  UI -->|"SSE Streaming"| API[(FastAPI Backend)]
+  API -->|"Retrieve"| RAG[RAG Engine]
+  RAG -->|"Embeddings / Search"| VEC[(ChromaDB Vector Store)]
+  RAG -->|"Load & Chunk"| DATA[(Your Test Data)]
+  API -->|"Answers (HTML)"| UI
 
     subgraph Store
       VEC
@@ -34,11 +34,11 @@ What this means in simple terms:
 
 ```mermaid
 graph TD
-  A[Frontend (HTML/CSS/JS SPA)] -->|/query/stream| B[FastAPI]
-  A -->|/status, /auto-initialize, /reload| B
-  B -->|generate_response(_stream)| C[EnhancedAdaptiveRAGSystem]
-  C -->|Embeddings & Similarity| D[ChromaDB (db/chroma_db)]
-  C -->|Parse & Chunk| E[Document Ingestor]
+  A["Frontend (HTML/CSS/JS SPA)"] -->|"/query/stream"| B[FastAPI]
+  A -->|"/status, /auto-initialize, /reload"| B
+  B -->|"generate_response_stream"| C[EnhancedAdaptiveRAGSystem]
+  C -->|"Embeddings & Similarity"| D[ChromaDB (db/chroma_db)]
+  C -->|"Parse & Chunk"| E[Document Ingestor]
   E --> F[(Excel/CSV/JSON/TXT)]
   C --> G[Chat Memory]
 
@@ -64,18 +64,18 @@ Key notes for engineers:
 ```mermaid
 sequenceDiagram
   participant U as User
-  participant UI as Web App
+  participant UI as "Web App"
   participant API as FastAPI
-  participant RAG as RAG Engine
+  participant RAG as "RAG Engine"
   participant DB as ChromaDB
-  U->>UI: Ask a question
-  UI->>API: POST /query/stream { query, k }
-  API->>RAG: generate_response_stream(query, k)
-  RAG->>DB: Similarity search (embeddings)
-  DB-->>RAG: Relevant chunks
-  RAG-->>API: Stream HTML tokens (status, formatted_token)
-  API-->>UI: data: { type, content }
-  UI-->>U: Live-rendered answer with highlights
+  U->>UI: "Ask a question"
+  UI->>API: "POST /query/stream { query, k }"
+  API->>RAG: "generate_response_stream(query, k)"
+  RAG->>DB: "Similarity search (embeddings)"
+  DB-->>RAG: "Relevant chunks"
+  RAG-->>API: "Stream HTML tokens (status, formatted_token)"
+  API-->>UI: "data: { type, content }"
+  UI-->>U: "Live-rendered answer with highlights"
 ```
 
 ## Quick Start
