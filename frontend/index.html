@@ -1444,6 +1444,7 @@
             <div class="sidebar-actions">
                 <button class="action-button" id="refreshStatusBtn">Refresh Status</button>
                 <button class="action-button" id="autoInitBtn">Custom Directory</button>
+                <input type="file" id="directoryInput" webkitdirectory multiple style="display: none;" accept="*">
                 <button class="action-button" id="reloadBtn">Reload Data</button>
             </div>
         </div>
@@ -2431,7 +2432,17 @@
                     document.getElementById('dd_systemStatus').className = `value ${data.initialized ? 'ready' : 'error'}`;
                     document.getElementById('dd_documentCount').textContent = data.total_documents || 0;
                     document.getElementById('dd_filesLoaded').textContent = data.files_loaded_count || 0;
-                    document.getElementById('dd_dataSource').textContent = data.data_source || 'Not set';
+                    
+                    // Handle custom directory vs default data source
+                    let dataSourceText = 'Not set';
+                    if (data.current_data_source) {
+                        dataSourceText = data.current_data_source;
+                    } else if (data.directory_name) {
+                        dataSourceText = `Custom: ${data.directory_name}`;
+                    } else if (data.data_source) {
+                        dataSourceText = data.data_source;
+                    }
+                    document.getElementById('dd_dataSource').textContent = dataSourceText;
                     document.getElementById('dd_vectorStore').textContent = data.vector_store_ready ? 'Ready' : 'Not Ready';
                     
                     // Update models status with more descriptive text
@@ -2512,24 +2523,233 @@
             
             // Sidebar actions
             async autoInitialize() {
-                const dataSource = prompt('Enter custom data source (file or directory path):', 'data');
-                if (!dataSource) return;
+                // Try modern File System Access API first
+                if ('showDirectoryPicker' in window && window.isSecureContext) {
+                    try {
+                        // Open native directory picker
+                        const directoryHandle = await window.showDirectoryPicker();
+                        const directoryPath = directoryHandle.name;
+                        
+                        this.showToast(`Selected directory: ${directoryPath}`, 'info');
+                        await this.initializeWithDirectory(directoryHandle);
+                        return;
+                    } catch (e) {
+                        if (e.name === 'AbortError') {
+                            // User cancelled the dialog
+                            return;
+                        }
+                        console.error('Directory picker error:', e);
+                        // Fall through to alternative method
+                    }
+                }
+                
+                // Fallback to webkitdirectory (broader browser support)
+                const directoryInput = document.getElementById('directoryInput');
+                if (directoryInput) {
+                    directoryInput.onchange = (event) => {
+                        const files = Array.from(event.target.files);
+                        if (files.length > 0) {
+                            this.initializeWithFiles(files);
+                        }
+                    };
+                    directoryInput.click();
+                } else {
+                    // Final fallback to input prompt
+                    const dataSource = prompt('Enter custom data source (file or directory path):', 'data');
+                    if (!dataSource) return;
+                    
+                    const autoInitBtn = document.getElementById('autoInitBtn');
+                    const original = autoInitBtn ? autoInitBtn.textContent : '';
+                    try {
+                        if (autoInitBtn) { autoInitBtn.textContent = 'Initializing...'; autoInitBtn.disabled = true; }
+                        const response = await fetch(this.getApiUrl(`auto-initialize?data_source=${encodeURIComponent(dataSource)}`), { method: 'POST' });
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.detail || `Failed (${response.status})`);
+                        }
+                        this.debouncedStatusUpdate();
+                        this.showToast('Custom directory initialized', 'success');
+                    } catch (e) {
+                        this.showToast(`Initialization failed: ${e.message}`, 'error');
+                    } finally {
+                        if (autoInitBtn) { autoInitBtn.textContent = original || 'Custom Directory'; autoInitBtn.disabled = false; }
+                    }
+                }
+            }
+
+            async initializeWithDirectory(directoryHandle) {
                 const autoInitBtn = document.getElementById('autoInitBtn');
                 const original = autoInitBtn ? autoInitBtn.textContent : '';
+                
                 try {
-                    if (autoInitBtn) { autoInitBtn.textContent = 'Initializing...'; autoInitBtn.disabled = true; }
-                    const response = await fetch(this.getApiUrl(`auto-initialize?data_source=${encodeURIComponent(dataSource)}`), { method: 'POST' });
+                    if (autoInitBtn) { 
+                        autoInitBtn.textContent = 'Processing...'; 
+                        autoInitBtn.disabled = true; 
+                    }
+
+                    // Read all files from the selected directory
+                    const files = await this.readDirectoryContents(directoryHandle);
+                    
+                    if (files.length === 0) {
+                        throw new Error('No readable files found in the selected directory');
+                    }
+
+                    // Send files to backend for processing
+                    const response = await fetch(this.getApiUrl('initialize-from-files'), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            directory_name: directoryHandle.name,
+                            files: files
+                        })
+                    });
+
                     if (!response.ok) {
                         const err = await response.json().catch(() => ({}));
                         throw new Error(err.detail || `Failed (${response.status})`);
                     }
+
+                    const result = await response.json();
                     this.debouncedStatusUpdate();
-                    this.showToast('Custom directory initialized', 'success');
+                    this.showToast(`Successfully loaded ${result.files_processed || files.length} files from "${directoryHandle.name}"`, 'success');
+                    
                 } catch (e) {
-                    this.showToast(`Initialization failed: ${e.message}`, 'error');
+                    this.showToast(`Directory processing failed: ${e.message}`, 'error');
                 } finally {
-                    if (autoInitBtn) { autoInitBtn.textContent = original || 'Custom Directory'; autoInitBtn.disabled = false; }
+                    if (autoInitBtn) { 
+                        autoInitBtn.textContent = original || 'Custom Directory'; 
+                        autoInitBtn.disabled = false; 
+                    }
                 }
+            }
+
+            async initializeWithFiles(fileList) {
+                const autoInitBtn = document.getElementById('autoInitBtn');
+                const original = autoInitBtn ? autoInitBtn.textContent : '';
+                
+                try {
+                    if (autoInitBtn) { 
+                        autoInitBtn.textContent = 'Processing...'; 
+                        autoInitBtn.disabled = true; 
+                    }
+
+                    // Filter and process files
+                    const supportedExtensions = ['.txt', '.md', '.json', '.csv', '.xml', '.log', '.py', '.js', '.html', '.css', '.pdf'];
+                    const files = [];
+                    
+                    for (const file of fileList) {
+                        const extension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+                        if (supportedExtensions.includes(extension)) {
+                            try {
+                                if (extension === '.pdf') {
+                                    // For PDF files, convert to base64 for backend processing
+                                    const arrayBuffer = await file.arrayBuffer();
+                                    const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                                    files.push({
+                                        name: file.name,
+                                        content: base64Content,
+                                        size: file.size,
+                                        type: 'application/pdf',
+                                        is_binary: true
+                                    });
+                                } else {
+                                    const content = await file.text();
+                                    files.push({
+                                        name: file.name,
+                                        content: content,
+                                        size: file.size,
+                                        type: file.type || 'text/plain',
+                                        is_binary: false
+                                    });
+                                }
+                            } catch (e) {
+                                console.warn(`Failed to read file ${file.name}:`, e);
+                            }
+                        }
+                    }
+                    
+                    if (files.length === 0) {
+                        throw new Error('No readable files found in the selected directory');
+                    }
+
+                    // Extract directory name from file path
+                    const directoryName = fileList[0].webkitRelativePath.split('/')[0] || 'Custom Directory';
+
+                    // Send files to backend for processing
+                    const response = await fetch(this.getApiUrl('initialize-from-files'), {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            directory_name: directoryName,
+                            files: files
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.detail || `Failed (${response.status})`);
+                    }
+
+                    const result = await response.json();
+                    this.debouncedStatusUpdate();
+                    this.showToast(`Successfully loaded ${result.files_processed || files.length} files from "${directoryName}"`, 'success');
+                    
+                } catch (e) {
+                    this.showToast(`Directory processing failed: ${e.message}`, 'error');
+                } finally {
+                    if (autoInitBtn) { 
+                        autoInitBtn.textContent = original || 'Custom Directory'; 
+                        autoInitBtn.disabled = false; 
+                    }
+                }
+            }
+
+            async readDirectoryContents(directoryHandle) {
+                const files = [];
+                const supportedExtensions = ['.txt', '.md', '.json', '.csv', '.xml', '.log', '.py', '.js', '.html', '.css', '.pdf'];
+                
+                try {
+                    for await (const entry of directoryHandle.values()) {
+                        if (entry.kind === 'file') {
+                            const file = await entry.getFile();
+                            const extension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+                            
+                            // Only process supported file types
+                            if (supportedExtensions.includes(extension)) {
+                                if (extension === '.pdf') {
+                                    // For PDF files, we'll send the file as base64 for backend processing
+                                    const arrayBuffer = await file.arrayBuffer();
+                                    const base64Content = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                                    files.push({
+                                        name: file.name,
+                                        content: base64Content,
+                                        size: file.size,
+                                        type: 'application/pdf',
+                                        is_binary: true
+                                    });
+                                } else {
+                                    const content = await file.text();
+                                    files.push({
+                                        name: file.name,
+                                        content: content,
+                                        size: file.size,
+                                        type: file.type || 'text/plain',
+                                        is_binary: false
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error reading directory contents:', e);
+                    throw new Error(`Failed to read directory contents: ${e.message}`);
+                }
+                
+                return files;
             }
 
             async reloadData() {

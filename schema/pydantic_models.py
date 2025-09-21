@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, Literal
+from typing import Optional, Literal, List, Dict
 
 
 # Pydantic models for API requests
@@ -22,3 +22,16 @@ class InitializeRequest(BaseModel):
 class RebuildIndexRequest(BaseModel):
 
     force_rebuild: Optional[bool] = False
+
+
+class FileData(BaseModel):
+    name: str
+    content: str
+    size: int
+    type: str
+    is_binary: Optional[bool] = False
+
+
+class DirectoryFilesRequest(BaseModel):
+    directory_name: str
+    files: List[FileData]

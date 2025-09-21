@@ -25,7 +25,7 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 # Local imports
-from schema.pydantic_models import InitializeRequest, RebuildIndexRequest, QueryRequest
+from schema.pydantic_models import InitializeRequest, RebuildIndexRequest, QueryRequest, DirectoryFilesRequest
 from rag_system import EnhancedAdaptiveRAGSystem, make_serializable
 
 
@@ -273,6 +273,101 @@ async def auto_initialize_system(data_source: str = "data"):
     except Exception as e:
         logger.error(f"Failed to auto-initialize RAG system: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Auto-initialization failed: {str(e)}")
+
+
+@app.post("/initialize-from-files")
+async def initialize_from_files(request: DirectoryFilesRequest):
+    """Initialize the RAG system with files sent from frontend directory picker"""
+    
+    global rag_system
+    
+    try:
+        logger.info(f"Initializing RAG system from {len(request.files)} files from directory: {request.directory_name}")
+        
+        # Create temporary directory structure for the files
+        import tempfile
+        import shutil
+        import base64
+        import pdfplumber
+        from io import BytesIO
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save all files to the temporary directory
+            files_saved = 0
+            for file_data in request.files:
+                file_path = os.path.join(temp_dir, file_data.name)
+                
+                try:
+                    if file_data.is_binary and file_data.type == 'application/pdf':
+                        # Handle PDF files
+                        pdf_content = base64.b64decode(file_data.content)
+                        
+                        # Extract text from PDF using pdfplumber
+                        extracted_text = ""
+                        try:
+                            with pdfplumber.open(BytesIO(pdf_content)) as pdf:
+                                for page in pdf.pages:
+                                    text = page.extract_text()
+                                    if text:
+                                        extracted_text += text + "\n"
+                            
+                            if not extracted_text.strip():
+                                logger.warning(f"No text could be extracted from PDF: {file_data.name}")
+                                continue
+                                
+                            # Save extracted text as .txt file for processing
+                            txt_file_path = os.path.join(temp_dir, f"{file_data.name}.txt")
+                            with open(txt_file_path, 'w', encoding='utf-8') as f:
+                                f.write(extracted_text)
+                            files_saved += 1
+                            logger.info(f"Extracted text from PDF: {file_data.name} ({len(extracted_text)} characters)")
+                            
+                        except Exception as pdf_error:
+                            logger.error(f"Failed to extract text from PDF {file_data.name}: {pdf_error}")
+                            continue
+                    else:
+                        # Handle text files
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(file_data.content)
+                        files_saved += 1
+                        logger.info(f"Saved file: {file_data.name} ({file_data.size} bytes)")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to save file {file_data.name}: {e}")
+                    continue
+            
+            if files_saved == 0:
+                raise ValueError("No files could be saved for processing")
+            
+            # Initialize RAG system with the temporary directory
+            rag_system = EnhancedAdaptiveRAGSystem(
+                data_source=temp_dir,
+                auto_initialize=True,
+                use_sentence_transformers=True,
+                use_reranker=True,
+                temperature=0.7
+            )
+            
+            status = rag_system.get_system_status()
+            
+            # Update data source info in status to show directory name
+            status['current_data_source'] = f"Custom Directory: {request.directory_name}"
+            status['directory_name'] = request.directory_name
+            
+        logger.info(f"RAG system initialized successfully from {files_saved} files")
+        
+        return {
+            "message": f"RAG system initialized successfully from directory: {request.directory_name}",
+            "status": status,
+            "files_processed": files_saved,
+            "directory_name": request.directory_name,
+            "total_documents": status.get('total_documents', 0),
+            "files_loaded": status.get('files_loaded_count', 0)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize from files: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Initialization from files failed: {str(e)}")
 
 
 @app.get("/status")

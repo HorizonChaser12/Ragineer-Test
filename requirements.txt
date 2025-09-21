@@ -4,6 +4,10 @@ uvicorn>=0.24.0
 pydantic>=2.5.0
 openpyxl>=3.1.2
 
+# PDF processing
+PyPDF2>=3.0.1
+pdfplumber>=0.9.0
+
 # LangChain and Google AI
 langchain>=0.1.0
 langchain_google_genai>=0.0.1

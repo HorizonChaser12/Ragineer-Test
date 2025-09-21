@@ -6,6 +6,8 @@ from langchain.prompts import PromptTemplate
 import sys
 import os
 import json
+import pdfplumber
+from io import BytesIO
 
 # Add the parent directory to the path to allow imports from config and models
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -577,19 +579,20 @@ Response (start directly with HTML):
 
     def _load_from_directory(self, directory_path: Path):
         """Load all supported files from a directory"""
-        supported_extensions = {'.xlsx', '.xls', '.csv', '.txt', '.json'}
+        supported_extensions = {'.xlsx', '.xls', '.csv', '.txt', '.json', '.pdf'}
         all_data = []
         loaded_files_count = 0
         
-        logger.info(f"Scanning directory: {directory_path}")
+        logger.info(f"Scanning directory: {directory_path} for supported files: {', '.join(supported_extensions)}")
         
         for file_path in directory_path.rglob('*'):
             if file_path.suffix.lower() in supported_extensions:
                 logger.info(f"Processing file: {file_path.name}")
                 file_data = self._load_single_file(file_path, append_to_main=False)
                 if file_data is not None and not file_data.empty:
-                    # Add source file info
-                    file_data['source_file'] = file_path.name
+                    # Add source file info if not already present
+                    if 'source_file' not in file_data.columns:
+                        file_data['source_file'] = file_path.name
                     all_data.append(file_data)
                     self.loaded_files.append(str(file_path))
                     loaded_files_count += 1
@@ -622,6 +625,8 @@ Response (start directly with HTML):
                 data = self._load_text_file(file_path)
             elif file_extension == '.json':
                 data = self._load_json_file(file_path)
+            elif file_extension == '.pdf':
+                data = self._load_pdf_file(file_path)
             else:
                 logger.warning(f"Unsupported file type: {file_extension}")
                 return None
@@ -732,6 +737,55 @@ Response (start directly with HTML):
         except Exception as e:
             logger.error(f"Failed to load JSON file {file_path}: {e}")
             return pd.DataFrame()
+
+    def _load_pdf_file(self, file_path: Path):
+        """Load PDF file and extract text content"""
+        try:
+            logger.info(f"Processing PDF file: {file_path.name}")
+            
+            extracted_text = ""
+            page_contents = []
+            
+            with pdfplumber.open(file_path) as pdf:
+                logger.info(f"PDF has {len(pdf.pages)} pages")
+                
+                for page_num, page in enumerate(pdf.pages, 1):
+                    try:
+                        text = page.extract_text()
+                        if text and text.strip():
+                            # Clean and normalize the text
+                            cleaned_text = text.strip()
+                            page_contents.append({
+                                'content': cleaned_text,
+                                'page_number': page_num,
+                                'document_type': 'pdf',
+                                'source_file': file_path.name
+                            })
+                            extracted_text += cleaned_text + "\n\n"
+                        else:
+                            logger.warning(f"No text found on page {page_num} of {file_path.name}")
+                    except Exception as page_error:
+                        logger.warning(f"Error extracting text from page {page_num} of {file_path.name}: {page_error}")
+                        continue
+            
+            if not page_contents:
+                logger.warning(f"No text could be extracted from PDF: {file_path.name}")
+                return pd.DataFrame({
+                    'content': [f'PDF file "{file_path.name}" processed but no readable text found.'],
+                    'document_type': 'pdf_error',
+                    'source_file': file_path.name
+                })
+            
+            logger.info(f"Successfully extracted text from {len(page_contents)} pages of {file_path.name}")
+            return pd.DataFrame(page_contents)
+            
+        except Exception as e:
+            logger.error(f"Failed to load PDF file {file_path}: {e}")
+            return pd.DataFrame({
+                'content': [f'Error processing PDF file "{file_path.name}": {str(e)}'],
+                'document_type': 'pdf_error',
+                'source_file': file_path.name
+            })
 
     def _create_dummy_data(self):
         """Create dummy data when no valid files are found"""
