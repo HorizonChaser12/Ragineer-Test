@@ -7,6 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' ry='12' fill='%231a73e8'/%3E%3Ctext x='50%' y='52%' text-anchor='middle' font-family='Inter, Arial, sans-serif' font-size='32' fill='white' font-weight='700'%3EFF%3C/text%3E%3C/svg%3E">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -166,9 +167,15 @@
             cursor: pointer;
             background: #fff;
             position: relative;
+            margin-bottom: 2px;
         }
 
-        .history-item:hover { background: #f8f9fa; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .history-item:hover { 
+            background: #f8f9fa; 
+            border-color: #ddd;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            margin-bottom: 2px;
+        }
         .history-item.active {
             border-color: #1a73e8;
             background: #f0f7ff;
@@ -179,15 +186,27 @@
             right: 8px;
             top: 50%;
             transform: translateY(-50%);
-            background: transparent;
-            border: none;
-            color: #888;
+            background: #f5f5f5;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            color: #666;
             cursor: pointer;
-            padding: 4px;
+            padding: 6px;
             display: none;
+            width: 28px;
+            height: 28px;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all 0.2s ease;
         }
         .history-item:hover .delete-btn { display: inline-flex; }
-        .history-item .delete-btn:hover { color: #c62828; }
+        .history-item .delete-btn:hover { 
+            background: #fee; 
+            border-color: #fcc; 
+            color: #c62828; 
+            transform: translateY(-50%) scale(1.05);
+        }
 
         .history-title {
             font-size: 13px;
@@ -1058,6 +1077,32 @@
             background: #a1a1a1;
         }
 
+        /* Chart Styling */
+        .chart-container {
+            margin: 16px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border: 1px solid #e6ecf5;
+            text-align: center;
+        }
+
+        .chart-container canvas {
+            max-width: 100%;
+            height: auto !important;
+            max-height: 400px;
+        }
+
+        .chart-instruction {
+            display: none; /* Hide the instruction text after chart is rendered */
+        }
+
+        /* Dark mode chart styling */
+        body.dark .chart-container {
+            background: #1f2937;
+            border-color: #374151;
+        }
+
         /* Welcome Message */
         .welcome-message {
             text-align: center;
@@ -1524,6 +1569,14 @@
                     const savedTheme = localStorage.getItem('ff_theme');
                     if (savedTheme === 'dark') document.body.classList.add('dark');
                 } catch {}
+
+                // Debug Chart.js loading
+                console.log('Chart.js availability check:', typeof Chart !== 'undefined' ? 'LOADED' : 'NOT LOADED');
+                if (typeof Chart !== 'undefined') {
+                    console.log('Chart.js version:', Chart.version);
+                } else {
+                    console.error('Chart.js failed to load! Charts will not work.');
+                }
             }
 
             async waitForBackendStartup() {
@@ -1717,17 +1770,12 @@
                     bubble.innerHTML = formattedContent;
                     // Apply selective highlights to specific bold phrases
                     this.applyKeywordHighlights(bubble);
+                    this.renderCharts(bubble);
                 } else {
                     bubble.textContent = content;
                 }
                 
                 messageDiv.appendChild(bubble);
-                
-                // Add timestamp
-                const info = document.createElement('div');
-                info.className = 'message-info';
-                info.textContent = new Date().toLocaleTimeString();
-                messageDiv.appendChild(info);
                 
                 this.chatMessages.appendChild(messageDiv);
                 this.scrollToBottom();
@@ -1742,34 +1790,176 @@
             }
 
             // Apply blue highlight to specific bold phrases within a container
-            // Only targets <strong> elements to avoid coloring general text
+            // Only targets <strong> elements and limits to truly critical phrases
             applyKeywordHighlights(container) {
                 if (!container) return;
                 try {
                     const strongs = container.querySelectorAll('strong');
                     if (!strongs || strongs.length === 0) return;
 
-                    // Phrases to highlight (case-insensitive). Easy to extend.
-                    const patterns = [
-                        /\bhigh severity\b/i,
-                        /\bcritical severity\b|severity\s*:\s*critical/i,
-                        /\bsev\s*-?\s*1\b|\bp0\b|\bp1\b/i,
-                        /\bhigh latency\b/i,
-                        /\burgent priority\b/i,
-                        /\bproduction\b|\bprod(?:uction)? incident\b/i
+                    // Exact phrases we consider key (case-insensitive)
+                    const exactPhrases = new Set([
+                        'high severity',
+                        'critical severity',
+                        'sev-1',
+                        'sev 1',
+                        'p0',
+                        'p1',
+                        'high latency',
+                        'urgent priority'
+                    ]);
+
+                    // Specific patterns to detect common severity notations
+                    const specificPatterns = [
+                        /\bseverity\s*[:\-]?\s*(critical|high)\b/i,
+                        /\bsev\s*[-\s]?1\b/i,
+                        /\bp[0-1]\b/i
                     ];
 
                     strongs.forEach(el => {
                         const text = (el.textContent || '').trim();
                         if (!text) return;
-                        const shouldHighlight = patterns.some(rx => rx.test(text));
+                        const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
+                        const shouldHighlight = exactPhrases.has(normalized) || specificPatterns.some(rx => rx.test(text));
                         if (shouldHighlight) {
                             el.classList.add('highlight-key');
+                        } else {
+                            el.classList.remove('highlight-key');
                         }
                     });
                 } catch (e) {
                     console.warn('applyKeywordHighlights failed:', e);
                 }
+            }
+
+            // Render charts from data attributes or chart instructions in assistant messages
+            renderCharts(container) {
+                if (!container) {
+                    console.log('renderCharts: No container provided');
+                    return;
+                }
+                
+                if (typeof Chart === 'undefined') {
+                    console.warn('Chart.js not loaded, skipping chart rendering');
+                    return;
+                }
+                
+                console.log('renderCharts: Checking for charts in container', container);
+                
+                try {
+                    // Look for chart data in data attributes or chart instructions
+                    const chartElements = container.querySelectorAll('[data-chart], .chart-instruction');
+                    
+                    console.log(`renderCharts: Found ${chartElements.length} chart elements`);
+                    
+                    chartElements.forEach((el, index) => {
+                        console.log(`renderCharts: Processing chart element ${index + 1}`, el);
+                        
+                        if (el.dataset.chart) {
+                            console.log('renderCharts: Found data-chart attribute:', el.dataset.chart);
+                            try {
+                                const chartConfig = JSON.parse(el.dataset.chart);
+                                console.log('renderCharts: Parsed chart config:', chartConfig);
+                                this.createChart(el, chartConfig);
+                            } catch (parseError) {
+                                console.error('renderCharts: Failed to parse chart data:', parseError);
+                            }
+                        } else if (el.classList.contains('chart-instruction') && el.textContent) {
+                            // Parse simple chart instructions like "CHART: severity_breakdown"
+                            const instruction = el.textContent.trim();
+                            console.log('renderCharts: Found chart instruction:', instruction);
+                            
+                            if (instruction.startsWith('CHART:')) {
+                                const chartType = instruction.replace('CHART:', '').trim();
+                                console.log('renderCharts: Creating predefined chart:', chartType);
+                                this.createPredefinedChart(el, chartType);
+                            }
+                        }
+                    });
+                } catch (e) {
+                    console.warn('renderCharts failed:', e);
+                }
+            }
+
+            createChart(canvasElement, chartConfig) {
+                console.log('createChart: Creating chart with config:', chartConfig);
+                
+                try {
+                    // Create a canvas if the element isn't one
+                    let canvas = canvasElement;
+                    if (canvasElement.tagName !== 'CANVAS') {
+                        console.log('createChart: Creating canvas element');
+                        canvas = document.createElement('canvas');
+                        canvas.width = 400;
+                        canvas.height = 200;
+                        canvasElement.innerHTML = ''; // Clear existing content
+                        canvasElement.appendChild(canvas);
+                    }
+
+                    console.log('createChart: About to create Chart.js instance');
+                    const chart = new Chart(canvas, chartConfig);
+                    console.log('✅ createChart: Chart created successfully!', chart);
+                    return chart;
+                } catch (error) {
+                    console.error('❌ createChart: Failed to create chart:', error);
+                    // Show error message in the element
+                    canvasElement.innerHTML = `<div style="color: red; padding: 10px;">Chart Error: ${error.message}</div>`;
+                }
+            }
+
+            createPredefinedChart(element, chartType) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 400;
+                canvas.height = 200;
+                element.innerHTML = '';
+                element.appendChild(canvas);
+
+                let config;
+                switch (chartType) {
+                    case 'severity_breakdown':
+                        config = {
+                            type: 'doughnut',
+                            data: {
+                                labels: ['High Severity', 'Medium Severity', 'Low Severity'],
+                                datasets: [{
+                                    data: [5, 8, 12],
+                                    backgroundColor: ['#ef4444', '#f59e0b', '#10b981']
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: {
+                                    legend: { position: 'bottom' },
+                                    title: { display: true, text: 'Defect Severity Breakdown' }
+                                }
+                            }
+                        };
+                        break;
+                    case 'defects_timeline':
+                        config = {
+                            type: 'line',
+                            data: {
+                                labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+                                datasets: [{
+                                    label: 'Defects Found',
+                                    data: [12, 19, 3, 5],
+                                    borderColor: '#1a73e8',
+                                    tension: 0.1
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: {
+                                    title: { display: true, text: 'Defects Over Time' }
+                                }
+                            }
+                        };
+                        break;
+                    default:
+                        return;
+                }
+
+                new Chart(canvas, config);
             }
 
             showTypingIndicator() {
@@ -1834,6 +2024,7 @@
                         <button class="chip" data-query="List top 5 high severity issues with IDs" data-send="true">Top 5 High Severity</button>
                         <button class="chip" data-query="Summarize defects by component with counts">By Component</button>
                         <button class="chip" data-query="What tests failed most frequently?">Frequent Failures</button>
+                        <button class="chip" data-query="Show me a visual breakdown of defect severity" data-send="true">📊 Test Chart</button>
                     </div>
                     <div class="welcome-hint">Tip: Press Enter to send, Shift+Enter for a new line.</div>
                 </div>`;
@@ -1939,6 +2130,8 @@
                                         }
                                         // Append pre-formatted HTML content
                                         bubble.innerHTML += data.content;
+                                        // Try to render any charts that might have been added
+                                        this.renderCharts(bubble);
                                         this.scrollToBottom();
                                     } else if (data.type === 'done') {
                                         // Ensure typing indicator is hidden and bubble is created
@@ -1959,6 +2152,8 @@
                                         }
                                         // After final HTML is in place, apply selective keyword highlights
                                         this.applyKeywordHighlights(bubble);
+                                        this.renderCharts(bubble);
+                                        this.renderCharts(bubble);
                                         this.scrollToBottom();
                                         // Persist assistant message at end using bubble content
                                         if (bubble) {
@@ -2056,9 +2251,6 @@
                     title.className = 'history-title';
                     title.title = sess.title;
                     title.textContent = sess.title;
-                    const meta = document.createElement('div');
-                    meta.className = 'history-meta';
-                    meta.textContent = new Date(sess.createdAt).toLocaleString();
                     const del = document.createElement('button');
                     del.className = 'delete-btn';
                     del.setAttribute('aria-label', 'Delete chat');
@@ -2069,7 +2261,6 @@
                         this.deleteSession(sess.id);
                     });
                     item.appendChild(title);
-                    item.appendChild(meta);
                     item.appendChild(del);
                     item.addEventListener('click', () => this.switchSession(sess.id));
                     if (sess.id === this.currentSessionId) {
@@ -2093,6 +2284,7 @@
                         bubble.setAttribute('data-using-html', 'true');
                         bubble.innerHTML = m.content;
                         this.applyKeywordHighlights(bubble);
+                        this.renderCharts(bubble);
                     } else {
                         bubble.textContent = m.content;
                     }
@@ -2297,9 +2489,6 @@
 
                 document.addEventListener('click', (e) => {
                     const container = document.querySelector('.header-status-container');
-                if (type === 'assistant') {
-                    this.applyKeywordHighlights(bubble);
-                }
                     if (!container.contains(e.target)) {
                         hide();
                     }

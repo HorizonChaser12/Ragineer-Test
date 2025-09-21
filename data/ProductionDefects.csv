@@ -1,0 +1,31 @@
+Defect ID,Defect Description,Component,Sev,Priority,Containment Phase,Root Cause,Status,Defect Log Date,Defect Resolution Date
+LIFE-2001,Authentication system allows weak passwords,User Management,High,Critical,Production,Security vulnerability,Fixed,2024-01-15,2024-01-16
+LIFE-2002,Payment gateway timeout during peak hours,Payment Processing,High,Critical,Production,Performance issue,Fixed,2024-01-18,2024-01-19
+LIFE-2003,Dashboard charts not loading on mobile devices,Analytics Dashboard,Medium,High,System Testing,Responsive design issue,Fixed,2024-01-20,2024-01-22
+LIFE-2004,Search function returns incorrect results,Search Engine,High,Critical,Production,Algorithm error,Open,2024-01-25,
+LIFE-2005,PDF reports generate with missing headers,Reporting Module,Medium,Medium,System Testing,Template configuration,Fixed,2024-01-28,2024-01-30
+LIFE-2006,User session expires too quickly,Session Management,Low,Low,UAT,Configuration issue,Fixed,2024-02-01,2024-02-02
+LIFE-2007,Database backup process consuming excessive CPU,Database Management,High,Critical,Production,Resource optimization,Fixed,2024-02-05,2024-02-06
+LIFE-2008,Email notifications not sent for critical alerts,Notification System,High,Critical,Production,SMTP configuration,Fixed,2024-02-08,2024-02-09
+LIFE-2009,File upload fails for documents larger than 10MB,File Management,Medium,Medium,System Testing,File size limitation,Fixed,2024-02-12,2024-02-14
+LIFE-2010,Navigation menu disappears on screen resize,Frontend Navigation,Low,Low,Unit Testing,CSS media query,Fixed,2024-02-15,2024-02-16
+LIFE-2011,API rate limiting too restrictive for enterprise users,API Gateway,Medium,High,Production,Rate limiting configuration,Open,2024-02-18,
+LIFE-2012,Calendar widget displays incorrect timezone,Calendar Module,Low,Medium,System Testing,Timezone calculation,Fixed,2024-02-20,2024-02-21
+LIFE-2013,Data export functionality crashes with large datasets,Data Export,High,High,Production,Memory optimization,Fixed,2024-02-25,2024-02-27
+LIFE-2014,Accessibility compliance issues with screen readers,Accessibility,Medium,High,UAT,ARIA attributes missing,Fixed,2024-02-28,2024-03-01
+LIFE-2015,Real-time chat messages delayed by 3-5 seconds,Real-time Communication,Medium,Medium,Production,WebSocket optimization,Open,2024-03-02,
+LIFE-2016,User profile images not displaying correctly,User Interface,Low,Low,System Testing,Image rendering,Fixed,2024-03-05,2024-03-06
+LIFE-2017,Advanced search filters not saving user preferences,Search Engine,Low,Medium,UAT,Local storage implementation,Fixed,2024-03-08,2024-03-09
+LIFE-2018,System performance degrades during backup operations,System Performance,High,Critical,Production,Resource scheduling,Fixed,2024-03-12,2024-03-13
+LIFE-2019,Mobile app crashes when switching between tabs,Mobile Application,High,High,System Testing,Memory management,Fixed,2024-03-15,2024-03-17
+LIFE-2020,Integration with third-party CRM system fails intermittently,Integration Layer,Medium,High,Production,Connection pooling,Open,2024-03-18,
+LIFE-2021,Audit log entries missing for administrative actions,Audit System,High,Critical,Production,Logging configuration,Fixed,2024-03-20,2024-03-21
+LIFE-2022,Dashboard widgets load slowly on first visit,Analytics Dashboard,Medium,Medium,System Testing,Caching implementation,Fixed,2024-03-25,2024-03-26
+LIFE-2023,Password reset emails contain broken links,Email Templates,Medium,High,UAT,URL generation,Fixed,2024-03-28,2024-03-29
+LIFE-2024,Report generation exceeds maximum execution time,Reporting Module,Medium,Medium,Production,Query optimization,Open,2024-04-01,
+LIFE-2025,Multi-factor authentication setup wizard incomplete,Security Module,Low,Medium,System Testing,UI workflow,Fixed,2024-04-05,2024-04-06
+LIFE-2026,Video conferencing quality poor on mobile networks,Video Conferencing,Medium,Medium,UAT,Adaptive bitrate,Fixed,2024-04-08,2024-04-10
+LIFE-2027,Automated testing suite has flaky test results,Testing Framework,Low,Low,Unit Testing,Test isolation,Fixed,2024-04-12,2024-04-13
+LIFE-2028,Customer support ticket routing logic incorrect,Support System,High,High,Production,Business rules engine,Fixed,2024-04-15,2024-04-16
+LIFE-2029,Data synchronization between servers out of sync,Data Synchronization,High,Critical,Production,Conflict resolution,Open,2024-04-18,
+LIFE-2030,User onboarding wizard skips required steps,User Onboarding,Medium,Medium,System Testing,State management,Fixed,2024-04-22,2024-04-23

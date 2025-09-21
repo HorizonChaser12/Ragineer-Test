@@ -5,6 +5,7 @@ from pathlib import Path
 from langchain.prompts import PromptTemplate
 import sys
 import os
+import json
 
 # Add the parent directory to the path to allow imports from config and models
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1461,6 +1462,56 @@ Response (start directly with HTML):
         # Add assistant response to chat memory
         self.chat_memory.add_assistant_message(response_text)
 
+        # Check if user requested visual analysis and add charts
+        chart_html = ""
+        if any(keyword in query.lower() for keyword in ['visual', 'chart', 'breakdown', 'graph', 'analyze']):
+            logger.info(f"Visual analysis requested in query: {query}")
+            try:
+                analysis_data = analyze_defect_data(retrieved_docs)
+                logger.info(f"Analysis data generated: {analysis_data}")
+                
+                if analysis_data:
+                    if 'severity' in query.lower():
+                        chart_html = create_severity_chart_html(analysis_data)
+                        logger.info("Generated severity chart HTML")
+                    elif 'component' in query.lower():
+                        chart_html = create_component_chart_html(analysis_data)
+                        logger.info("Generated component chart HTML")
+                    else:
+                        # Default to severity breakdown for general requests
+                        chart_html = create_severity_chart_html(analysis_data)
+                        logger.info("Generated default severity chart HTML")
+                else:
+                    # Create a fallback demo chart if no data available
+                    logger.info("No analysis data available, creating demo chart")
+                    demo_chart_config = {
+                        "type": "doughnut",
+                        "data": {
+                            "labels": ["High Severity", "Medium Severity", "Low Severity"],
+                            "datasets": [{
+                                "data": [5, 8, 3],
+                                "backgroundColor": ["#ef4444", "#f59e0b", "#10b981"]
+                            }]
+                        },
+                        "options": {
+                            "responsive": True,
+                            "plugins": {
+                                "legend": {"position": "bottom"},
+                                "title": {"display": True, "text": "Sample Defect Severity Distribution"}
+                            }
+                        }
+                    }
+                    chart_html = f'<div class="chart-container" data-chart=\'{json.dumps(demo_chart_config)}\'></div>'
+                    logger.info("Generated demo chart HTML")
+                        
+                if chart_html:
+                    response_text += f"\n\n{chart_html}"
+                    logger.info("Added chart HTML to response")
+                else:
+                    logger.warning("No chart HTML generated despite analysis data")
+            except Exception as e:
+                logger.warning(f"Failed to generate chart: {e}")
+
         # Prepare response with serializable data
 
         serializable_retrieved_docs = make_serializable(retrieved_docs)
@@ -1796,6 +1847,72 @@ Response (start directly with HTML):
             # Small final delay
             await asyncio.sleep(0.05)
 
+            # Check if user requested visual analysis and add charts
+            if any(keyword in query.lower() for keyword in ['visual', 'chart', 'breakdown', 'graph', 'analyze']):
+                logger.info(f"Visual analysis requested in streaming query: {query}")
+                try:
+                    analysis_data = analyze_defect_data(retrieved_docs)
+                    logger.info(f"Streaming analysis data generated: {analysis_data}")
+                    chart_html = ""
+                    
+                    if analysis_data:
+                        if 'severity' in query.lower() and 'component' not in query.lower():
+                            # Only severity chart requested
+                            chart_html = create_severity_chart_html(analysis_data)
+                            logger.info("Generated streaming severity chart HTML")
+                        elif 'component' in query.lower() and 'severity' not in query.lower():
+                            # Only component chart requested
+                            chart_html = create_component_chart_html(analysis_data)
+                            logger.info("Generated streaming component chart HTML")
+                        else:
+                            # Default: generate multiple charts for comprehensive analysis
+                            severity_chart = create_severity_chart_html(analysis_data)
+                            component_chart = create_component_chart_html(analysis_data)
+                            
+                            # Create a containment phase chart if we have the data
+                            containment_chart = create_containment_phase_chart_html(analysis_data)
+                            
+                            # Combine all charts
+                            chart_html = severity_chart + component_chart + containment_chart
+                            logger.info("Generated streaming multiple charts (severity + component + containment)")
+                    else:
+                        # Create a fallback demo chart if no data available
+                        logger.info("No analysis data available, creating demo chart")
+                        demo_chart_config = {
+                            "type": "doughnut",
+                            "data": {
+                                "labels": ["High Severity", "Medium Severity", "Low Severity"],
+                                "datasets": [{
+                                    "data": [5, 8, 3],
+                                    "backgroundColor": ["#ef4444", "#f59e0b", "#10b981"]
+                                }]
+                            },
+                            "options": {
+                                "responsive": True,
+                                "plugins": {
+                                    "legend": {"position": "bottom"},
+                                    "title": {"display": True, "text": "Sample Defect Severity Distribution"}
+                                }
+                            }
+                        }
+                        chart_html = f'<div class="chart-container" data-chart=\'{json.dumps(demo_chart_config)}\'></div>'
+                        logger.info("Generated demo chart HTML")
+                            
+                    if chart_html:
+                        # Stream the chart HTML
+                        yield {
+                            "type": "formatted_token",
+                            "content": chart_html,
+                            "done": False
+                        }
+                        logger.info("Streamed chart HTML in response")
+                    else:
+                        logger.warning("No chart HTML generated in streaming despite analysis data")
+                except Exception as e:
+                    logger.warning(f"Failed to generate streaming chart: {e}")
+            else:
+                logger.info(f"No visual keywords found in query: {query}")
+            
             # Send final completion signal
             yield {
                 "type": "done",
@@ -1887,3 +2004,248 @@ def reset_vector_store(rag_system: EnhancedAdaptiveRAGSystem) -> bool:
     except Exception as e:
         logger.error(f"Error resetting vector store: {e}", exc_info=True)
         return False
+
+def generate_chart_html(chart_type: str, data: Dict[str, Any], title: str = "") -> str:
+    """
+    Generate HTML for embedding charts in chat responses.
+    
+    Args:
+        chart_type: Type of chart ('pie', 'bar', 'line', 'doughnut')
+        data: Chart data structure
+        title: Chart title
+        
+    Returns:
+        HTML string with chart configuration
+    """
+    chart_config = {
+        "type": chart_type,
+        "data": data,
+        "options": {
+            "responsive": True,
+            "plugins": {
+                "legend": {"position": "bottom"},
+                "title": {"display": bool(title), "text": title}
+            }
+        }
+    }
+    
+    return f'<div class="chart-container" data-chart=\'{json.dumps(chart_config)}\'></div>'
+
+def analyze_defect_data(documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Analyze defect data to generate charts and insights.
+    
+    Args:
+        documents: List of retrieved document dictionaries
+        
+    Returns:
+        Dictionary containing analysis data for charts
+    """
+    if not documents:
+        return {}
+    
+    # Extract defect information from documents
+    severities = []
+    components = []
+    containment_phases = []
+    
+    for doc in documents:
+        # Get text content from the document dict
+        content = ""
+        if isinstance(doc, dict):
+            if "text" in doc:
+                content = doc["text"].lower()
+            elif "page_content" in doc:
+                content = doc["page_content"].lower()
+            elif "content" in doc and isinstance(doc["content"], str):
+                content = doc["content"].lower()
+            
+            # Also check structured content data
+            structured_content = doc.get("content", {})
+            if isinstance(structured_content, dict):
+                # Extract severity from structured data first
+                sev_field = structured_content.get("Sev", "").lower()
+                if sev_field == "high":
+                    severities.append('High')
+                elif sev_field == "medium":
+                    severities.append('Medium')
+                elif sev_field == "low":
+                    severities.append('Low')
+                else:
+                    # Fallback to text analysis
+                    severity = 'Low'  # default
+                    if 'sev: high' in content or 'severity: high' in content or any(term in content for term in ['high severity', 'critical', 'sev-1', 'p0']):
+                        severity = 'High'
+                    elif 'sev: medium' in content or 'severity: medium' in content or any(term in content for term in ['medium severity', 'sev-2', 'p1', 'p2']):
+                        severity = 'Medium'
+                    elif 'sev: low' in content or 'severity: low' in content:
+                        severity = 'Low'
+                    severities.append(severity)
+                
+                # Extract component from structured data first
+                comp_field = structured_content.get("Component", "").strip()
+                if comp_field:
+                    components.append(comp_field)
+                else:
+                    # Fallback to text analysis
+                    component = 'Other'  # default
+                    if 'component:' in content:
+                        # Try to extract the component name from "component: ComponentName"
+                        try:
+                            comp_part = content.split('component:')[1].split()[0].strip()
+                            if comp_part:
+                                component = comp_part.title()
+                        except (IndexError, AttributeError):
+                            pass
+                    
+                    # Also check for common component patterns
+                    if any(term in content for term in ['frontend', 'ui', 'interface', 'responsive design']):
+                        component = 'Frontend'
+                    elif any(term in content for term in ['backend', 'api', 'server', 'background processing']):
+                        component = 'Backend'
+                    elif any(term in content for term in ['database', 'db', 'mysql', 'data']):
+                        component = 'Database'
+                    elif any(term in content for term in ['analytics', 'dashboard', 'reporting']):
+                        component = 'Analytics'
+                    elif any(term in content for term in ['navigation', 'user management', 'file processing']):
+                        component = component if component != 'Other' else 'Application'
+                    
+                    components.append(component)
+                
+                # Extract containment phase from structured data
+                containment_field = structured_content.get("Containment Phase", "").strip()
+                if containment_field:
+                    containment_phases.append(containment_field)
+                else:
+                    # Fallback to text analysis
+                    if 'production' in content.lower():
+                        containment_phases.append('Production')
+                    elif 'system testing' in content.lower():
+                        containment_phases.append('System Testing')
+                    elif 'uat' in content.lower() or 'user acceptance' in content.lower():
+                        containment_phases.append('UAT')
+                    elif 'unit testing' in content.lower():
+                        containment_phases.append('Unit Testing')
+                    else:
+                        containment_phases.append('Unknown')
+            else:
+                # No structured content, use text analysis only
+                severity = 'Low'  # default
+                if 'sev: high' in content or 'severity: high' in content or any(term in content for term in ['high severity', 'critical', 'sev-1', 'p0']):
+                    severity = 'High'
+                elif 'sev: medium' in content or 'severity: medium' in content or any(term in content for term in ['medium severity', 'sev-2', 'p1', 'p2']):
+                    severity = 'Medium'
+                elif 'sev: low' in content or 'severity: low' in content:
+                    severity = 'Low'
+                severities.append(severity)
+                
+                # Extract component - look for component field and common component names
+                component = 'Other'  # default
+                if 'component:' in content:
+                    # Try to extract the component name from "component: ComponentName"
+                    try:
+                        comp_part = content.split('component:')[1].split()[0].strip()
+                        if comp_part:
+                            component = comp_part.title()
+                    except (IndexError, AttributeError):
+                        pass
+                
+                # Also check for common component patterns
+                if any(term in content for term in ['frontend', 'ui', 'interface', 'responsive design']):
+                    component = 'Frontend'
+                elif any(term in content for term in ['backend', 'api', 'server', 'background processing']):
+                    component = 'Backend'
+                elif any(term in content for term in ['database', 'db', 'mysql', 'data']):
+                    component = 'Database'
+                elif any(term in content for term in ['analytics', 'dashboard', 'reporting']):
+                    component = 'Analytics'
+                elif any(term in content for term in ['navigation', 'user management', 'file processing']):
+                    component = component if component != 'Other' else 'Application'
+                
+                components.append(component)
+                
+                # Extract containment phase from text analysis
+                if 'production' in content.lower():
+                    containment_phases.append('Production')
+                elif 'system testing' in content.lower():
+                    containment_phases.append('System Testing')
+                elif 'uat' in content.lower() or 'user acceptance' in content.lower():
+                    containment_phases.append('UAT')
+                elif 'unit testing' in content.lower():
+                    containment_phases.append('Unit Testing')
+                else:
+                    containment_phases.append('Unknown')
+    
+    # Count occurrences
+    from collections import Counter
+    severity_counts = Counter(severities)
+    component_counts = Counter(components)
+    containment_counts = Counter(containment_phases)
+    
+    return {
+        'severity_breakdown': {
+            'labels': list(severity_counts.keys()),
+            'data': list(severity_counts.values()),
+            'colors': ['#ef4444', '#f59e0b', '#10b981']  # Red, Yellow, Green
+        },
+        'component_breakdown': {
+            'labels': list(component_counts.keys()),
+            'data': list(component_counts.values()),
+            'colors': ['#3b82f6', '#8b5cf6', '#06b6d4', '#6b7280']  # Blue, Purple, Cyan, Gray
+        },
+        'containment_breakdown': {
+            'labels': list(containment_counts.keys()),
+            'data': list(containment_counts.values()),
+            'colors': ['#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#2563eb']  # Red, Orange, Yellow, Green, Blue
+        }
+    }
+
+def create_severity_chart_html(analysis_data: Dict[str, Any]) -> str:
+    """Create HTML for severity breakdown chart."""
+    if 'severity_breakdown' not in analysis_data:
+        return ""
+    
+    data = analysis_data['severity_breakdown']
+    chart_data = {
+        "labels": data['labels'],
+        "datasets": [{
+            "data": data['data'],
+            "backgroundColor": data['colors'][:len(data['labels'])]
+        }]
+    }
+    
+    return generate_chart_html('doughnut', chart_data, 'Defect Severity Breakdown')
+
+def create_component_chart_html(analysis_data: Dict[str, Any]) -> str:
+    """Create HTML for component breakdown chart."""
+    if 'component_breakdown' not in analysis_data:
+        return ""
+    
+    data = analysis_data['component_breakdown']
+    chart_data = {
+        "labels": data['labels'],
+        "datasets": [{
+            "label": "Defects by Component",
+            "data": data['data'],
+            "backgroundColor": data['colors'][:len(data['labels'])]
+        }]
+    }
+    
+    return generate_chart_html('bar', chart_data, 'Defects by Component')
+
+def create_containment_phase_chart_html(analysis_data: Dict[str, Any]) -> str:
+    """Create HTML for containment phase breakdown chart."""
+    if 'containment_breakdown' not in analysis_data:
+        return ""
+    
+    data = analysis_data['containment_breakdown']
+    chart_data = {
+        "labels": data['labels'],
+        "datasets": [{
+            "label": "Defects by Containment Phase",
+            "data": data['data'],
+            "backgroundColor": data['colors'][:len(data['labels'])]
+        }]
+    }
+    
+    return generate_chart_html('bar', chart_data, 'Defects by Containment Phase')

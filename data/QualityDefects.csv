@@ -1,0 +1,21 @@
+Defect ID,Summary,Component,Severity,Priority,Phase,Category,Impact,Effort,Reporter
+LIFE-4001,User interface freezes during data import,Data Import Service,High,Critical,Production,Functional,High,Medium,QA Team
+LIFE-4002,Memory leak in real-time monitoring dashboard,System Monitoring,Medium,High,System Testing,Performance,Medium,High,Development Team
+LIFE-4003,Authentication tokens expire prematurely,Security Framework,High,Critical,Production,Security,High,Low,Security Team
+LIFE-4004,Chart rendering fails with large datasets,Visualization Engine,Medium,Medium,System Testing,Performance,Medium,Medium,Product Team
+LIFE-4005,File upload progress indicator inaccurate,File Management,Low,Low,UAT,Usability,Low,Low,UX Team
+LIFE-4006,Database connection pool exhaustion,Database Layer,High,Critical,Production,Infrastructure,High,High,DevOps Team
+LIFE-4007,Email template rendering broken in dark mode,Email Service,Low,Medium,Unit Testing,Visual,Low,Low,Design Team
+LIFE-4008,API rate limiting blocks legitimate users,API Management,Medium,High,Production,Configuration,Medium,Medium,Backend Team
+LIFE-4009,Mobile push notifications delayed,Notification Service,Medium,Medium,System Testing,Performance,Medium,Medium,Mobile Team
+LIFE-4010,Backup restoration process timeout,Backup System,High,Critical,Production,Infrastructure,High,High,Infrastructure Team
+LIFE-4011,Search autocomplete suggestions irrelevant,Search Service,Low,Medium,UAT,Usability,Low,Medium,Search Team
+LIFE-4012,Integration webhook delivery failures,Integration Platform,Medium,High,Production,Reliability,Medium,Medium,Integration Team
+LIFE-4013,Performance metrics collection overhead,Monitoring System,Medium,Medium,System Testing,Performance,Medium,High,Performance Team
+LIFE-4014,User permission changes not reflected immediately,Authorization Service,Medium,High,Production,Security,Medium,Medium,Security Team
+LIFE-4015,Report export generates malformed CSV files,Export Service,Low,Medium,System Testing,Data Quality,Low,Low,Data Team
+LIFE-4016,Video call quality degrades with multiple participants,Communication Platform,Medium,Medium,UAT,Performance,Medium,High,Communications Team
+LIFE-4017,Automated deployment pipeline fails intermittently,CI/CD Pipeline,High,High,Production,Infrastructure,High,Medium,DevOps Team
+LIFE-4018,Customer support chat widget unresponsive,Support Widget,Medium,High,Production,Functional,Medium,Low,Support Team
+LIFE-4019,Analytics data aggregation produces incorrect totals,Analytics Engine,High,Critical,System Testing,Data Quality,High,High,Analytics Team
+LIFE-4020,Third-party library vulnerability detected,Dependency Management,High,Critical,Production,Security,High,Medium,Security Team

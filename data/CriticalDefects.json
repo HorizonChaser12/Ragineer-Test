@@ -1,0 +1,197 @@
+[
+  {
+    "defectId": "LIFE-3001",
+    "title": "Performance bottleneck in user authentication",
+    "description": "Login process takes over 10 seconds during peak hours affecting user experience",
+    "component": "Authentication Service",
+    "severity": "High",
+    "priority": "Critical",
+    "containmentPhase": "Production",
+    "rootCause": "Database connection pooling insufficient",
+    "status": "In Progress",
+    "reportedDate": "2024-03-20",
+    "assignee": "Security Team",
+    "steps": [
+      "Identify peak usage patterns",
+      "Analyze database query performance",
+      "Implement connection pooling optimization",
+      "Load test authentication service"
+    ]
+  },
+  {
+    "defectId": "LIFE-3002", 
+    "title": "Analytics dashboard memory leak",
+    "description": "Browser memory usage increases continuously when viewing real-time analytics",
+    "component": "Analytics Dashboard",
+    "severity": "Medium",
+    "priority": "High",
+    "containmentPhase": "System Testing",
+    "rootCause": "Event listeners not properly cleaned up",
+    "status": "Fixed",
+    "reportedDate": "2024-03-18",
+    "resolvedDate": "2024-03-22",
+    "assignee": "Frontend Team",
+    "steps": [
+      "Profile memory usage patterns",
+      "Identify unreleased event listeners", 
+      "Implement proper cleanup mechanisms",
+      "Verify memory stability"
+    ]
+  },
+  {
+    "defectId": "LIFE-3003",
+    "title": "Payment processing API timeout",
+    "description": "Payment transactions fail with timeout errors during high traffic periods",
+    "component": "Payment Gateway",
+    "severity": "High", 
+    "priority": "Critical",
+    "containmentPhase": "Production",
+    "rootCause": "External API rate limiting exceeded",
+    "status": "Fixed",
+    "reportedDate": "2024-03-15",
+    "resolvedDate": "2024-03-16",
+    "assignee": "Backend Team",
+    "steps": [
+      "Implement payment retry logic",
+      "Add circuit breaker pattern",
+      "Configure proper timeout values",
+      "Monitor payment success rates"
+    ]
+  },
+  {
+    "defectId": "LIFE-3004",
+    "title": "Mobile app navigation inconsistency",
+    "description": "Navigation menu behavior differs between iOS and Android platforms",
+    "component": "Mobile Application",
+    "severity": "Low",
+    "priority": "Medium",
+    "containmentPhase": "UAT",
+    "rootCause": "Platform-specific styling conflicts",
+    "status": "Open",
+    "reportedDate": "2024-03-25",
+    "assignee": "Mobile Team",
+    "steps": [
+      "Document navigation differences",
+      "Create unified component library",
+      "Test across all target devices",
+      "Update style guidelines"
+    ]
+  },
+  {
+    "defectId": "LIFE-3005",
+    "title": "Email notification delivery delays",
+    "description": "System notifications arrive 15-30 minutes after triggering events",
+    "component": "Notification Engine",
+    "severity": "Medium",
+    "priority": "High",
+    "containmentPhase": "Production",
+    "rootCause": "Message queue processing bottleneck",
+    "status": "In Progress",
+    "reportedDate": "2024-03-28",
+    "assignee": "Infrastructure Team",
+    "steps": [
+      "Analyze message queue metrics",
+      "Scale notification workers",
+      "Implement priority queuing",
+      "Monitor delivery times"
+    ]
+  },
+  {
+    "defectId": "LIFE-3006",
+    "title": "Report generation server overload",
+    "description": "Large report requests cause server CPU to spike to 100% and timeout",
+    "component": "Reporting Engine",
+    "severity": "High",
+    "priority": "Critical", 
+    "containmentPhase": "System Testing",
+    "rootCause": "Inefficient data aggregation queries",
+    "status": "Fixed",
+    "reportedDate": "2024-03-12",
+    "resolvedDate": "2024-03-18",
+    "assignee": "Data Team",
+    "steps": [
+      "Profile report generation queries",
+      "Implement query optimization",
+      "Add report caching layer", 
+      "Load test report endpoints"
+    ]
+  },
+  {
+    "defectId": "LIFE-3007",
+    "title": "Database backup corruption",
+    "description": "Weekly backup files are occasionally corrupted and cannot be restored",
+    "component": "Database Management",
+    "severity": "High",
+    "priority": "Critical",
+    "containmentPhase": "Production",
+    "rootCause": "Backup process interrupted by system maintenance",
+    "status": "Fixed",
+    "reportedDate": "2024-03-05",
+    "resolvedDate": "2024-03-08",
+    "assignee": "DevOps Team",
+    "steps": [
+      "Implement backup integrity checks",
+      "Schedule backups outside maintenance windows",
+      "Add backup redundancy",
+      "Test restore procedures"
+    ]
+  },
+  {
+    "defectId": "LIFE-3008",
+    "title": "Search functionality returns stale results",
+    "description": "Search index not updating with latest content changes",
+    "component": "Search Engine",
+    "severity": "Medium",
+    "priority": "Medium",
+    "containmentPhase": "System Testing",
+    "rootCause": "Search index synchronization delay",
+    "status": "Open",
+    "reportedDate": "2024-04-01",
+    "assignee": "Search Team",
+    "steps": [
+      "Investigate index update frequency",
+      "Implement real-time index updates",
+      "Add search result freshness indicators",
+      "Monitor index synchronization"
+    ]
+  },
+  {
+    "defectId": "LIFE-3009",
+    "title": "API response caching issues",
+    "description": "Cached API responses serve outdated data to client applications",
+    "component": "API Gateway",
+    "severity": "Medium",
+    "priority": "High",
+    "containmentPhase": "UAT",
+    "rootCause": "Cache invalidation strategy flawed",
+    "status": "In Progress",
+    "reportedDate": "2024-04-05",
+    "assignee": "Backend Team",
+    "steps": [
+      "Review cache invalidation logic",
+      "Implement cache versioning",
+      "Add cache health monitoring",
+      "Test cache consistency"
+    ]
+  },
+  {
+    "defectId": "LIFE-3010",
+    "title": "Frontend asset loading failures",
+    "description": "CSS and JavaScript files fail to load intermittently causing broken UI",
+    "component": "Frontend Infrastructure",
+    "severity": "Low",
+    "priority": "Low",
+    "containmentPhase": "Unit Testing",
+    "rootCause": "CDN configuration issues",
+    "status": "Fixed",
+    "reportedDate": "2024-03-30",
+    "resolvedDate": "2024-04-02",
+    "assignee": "Frontend Team",
+    "steps": [
+      "Configure CDN fallback mechanisms",
+      "Implement asset integrity checks",
+      "Add loading error handling",
+      "Monitor asset delivery success"
+    ]
+  }
+]
