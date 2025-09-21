@@ -1,100 +1,119 @@
-# Fix Finder - Intelligent Testing Assistant
+# Fix Finder 3.0 – Intelligent Testing Assistant
 
-**Advanced RAG System for IT Testing Teams and Quality Assurance**
+Advanced Retrieval-Augmented Generation (RAG) for QA and Testing teams, redesigned for speed, clarity, and reliability.
 
 
-## Architecture
+## Architecture (at a glance)
 
+For everyone: how the pieces talk to each other
+
+```mermaid
+flowchart LR
+    User([Tester / QA]) -->|Questions| UI[Web App (Fix Finder)]
+    UI -->|SSE Streaming| API[(FastAPI Backend)]
+    API -->|Retrieve| RAG[RAG Engine]
+    RAG -->|Embeddings / Search| VEC[(ChromaDB Vector Store)]
+    RAG -->|Load & Chunk| DATA[(Your Test Data)]
+    API -->|Answers (HTML)| UI
+
+    subgraph Store
+      VEC
+    end
+    subgraph Sources
+      DATA
+    end
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Testing Teams & QA Engineers                 │
-│        (Web Testing, Mobile Testing, API Testing, etc.)         │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                Fix Finder Web Interface                         │
-│           (Intelligent Testing Assistant)                       │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │ Real-time Queries & Responses
-                          ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    FastAPI Backend                              │
-│        (RESTful APIs, Streaming, CORS Enabled)                  │
-└────────────┬─────────────────────────────────┬──────────────────┘
-             │                                 │
-             ▼                                 ▼
-┌─────────────────────────┐          ┌─────────────────────────┐
-│    RAG Intelligence     │          │   Knowledge Management  │
-│                         │          │                         │
-│ • Semantic Search       │          │ • Multi-Format Import   │
-│ • Pattern Recognition   │          │ • Data Preprocessing    │
-│ • Context Generation    │          │ • Vector Embeddings     │
-│ • Response Synthesis    │          │ • Index Management      │
-└────────────┬────────────┘          └────────────┬────────────┘
-             │                                    │
-             ▼                                    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Unified Knowledge Base                       │
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────┐ │
-│  │   Web App   │  │   Mobile    │  │     API     │  │  Other  │ │
-│  │   Defects   │  │   Defects   │  │   Testing   │  │ Testing │ │
-│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────┘ │
-│                                                                 │
-│  Data Sources: JIRA, Azure DevOps, TestRail, Excel, CSV, JSON   │
-└─────────────────────────────────────────────────────────────────┘
 
-Information Flow:
-1. Tester asks question → Web Interface
-2. Query processed → RAG Intelligence Engine  
-3. Relevant defects retrieved → Knowledge Base Search
-4. Context-aware response → LLM Generation
-5. Formatted answer → Real-time Streaming to User
-6. Insights & patterns → Testing Team Knowledge
+What this means in simple terms:
+- You ask a question in the browser.
+- The backend finds relevant bits from your test documents and crafts an answer.
+- You see the response as it streams in, with clear formatting and highlights.
+
+
+## Technical architecture (Zoomed-in)
+
+```mermaid
+graph TD
+  A[Frontend (HTML/CSS/JS SPA)] -->|/query/stream| B[FastAPI]
+  A -->|/status, /auto-initialize, /reload| B
+  B -->|generate_response(_stream)| C[EnhancedAdaptiveRAGSystem]
+  C -->|Embeddings & Similarity| D[ChromaDB (db/chroma_db)]
+  C -->|Parse & Chunk| E[Document Ingestor]
+  E --> F[(Excel/CSV/JSON/TXT)]
+  C --> G[Chat Memory]
+
+  subgraph Frontend
+    A
+  end
+  subgraph Backend
+    B --> C --> D
+    C --> E --> F
+    C --> G
+  end
+```
+
+Key notes for engineers:
+- Streaming via Server-Sent Events; tokens are HTML-formatted for direct rendering.
+- Vector storage is persistent via ChromaDB under `db/chroma_db/` (ignored in git).
+- Data ingestion supports Excel/CSV/JSON/TXT placed in `data/`.
+- Chat sessions persist in the browser (localStorage). Backend has chat memory APIs as well.
+
+
+## Request flow (simplified sequence)
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant UI as Web App
+  participant API as FastAPI
+  participant RAG as RAG Engine
+  participant DB as ChromaDB
+  U->>UI: Ask a question
+  UI->>API: POST /query/stream { query, k }
+  API->>RAG: generate_response_stream(query, k)
+  RAG->>DB: Similarity search (embeddings)
+  DB-->>RAG: Relevant chunks
+  RAG-->>API: Stream HTML tokens (status, formatted_token)
+  API-->>UI: data: { type, content }
+  UI-->>U: Live-rendered answer with highlights
 ```
 
 ## Quick Start
 
 1. **Clone Repository**
-```bash
+```cmd
 git clone <repo-url>
-cd fix-finder
+cd Ragineer-Test
 ```
 
 2. **Setup Virtual Environment**
-```bash
+```cmd
 python -m venv myvenv
-myvenv\Scripts\activate  # Windows
-# source myvenv/bin/activate  # Linux/Mac
+myvenv\Scripts\activate
 ```
 
 3. **Install Dependencies**
-```bash
+```cmd
 pip install -r requirements.txt
 ```
 
-4. **ChromaDB Vector Store**
-The system now uses ChromaDB for efficient vector storage and semantic search. ChromaDB stores embeddings persistently on disk in the `db/chroma_db` directory. For more information, see `docs/chroma_integration.md`.
+4. **Run (Frontend + Backend together)**
+```cmd
+python scripts\run.py
+```
+This starts:
+- FastAPI on `http://localhost:8000`
+- Frontend on `http://localhost:3000`
+Your browser will open automatically.
 
-4. **Add Your Data**
+5. **Add Your Data**
 Put testing data files in `data/` folder:
 - Excel (.xlsx): JIRA exports, defect reports
 - CSV (.csv): TestRail results, bug tracking exports
 - JSON (.json): API responses, structured data
 
-5. **Start Servers**
-```bash
-# Terminal 1: Start API server
-python -m uvicorn api_endpoints.api_app:app --host 0.0.0.0 --port 8000
-
-# Terminal 2: Start frontend
-cd frontend
-python -m http.server 3000
-```
-
 6. **Access Application**
-Open: http://localhost:3000/chat_interface.html
+Open: `http://localhost:3000`
 
 ## Environment Setup (.env)
 
@@ -112,8 +131,32 @@ TEMPERATURE=0.7
 
 ## Changelog
 
-### v2.0.0 (Current) - Fix Finder Testing Assistant
-**Major System Evolution: From Basic RAG to Universal Testing Intelligence**
+### v3.0.0 (Current) – UX Refresh + Streaming Reliability
+Highlights for teams and engineers
+
+User experience
+- New chat hero/welcome with suggestion chips.
+- Sidebar “Conversations” with live count, per-chat delete, and export.
+- Dark mode with an animated sun/moon toggle next to system status.
+- Crisp title, aligned headers, and better toasts/feedback.
+
+Streaming and formatting
+- Paragraph-first HTML streaming for clean line breaks.
+- Selective emphasis: only key bold phrases (e.g., “high severity”) are tinted.
+- Reliable status updates during stream until content starts rendering.
+
+Ops and stability
+- One-click auto-initialize and reload data actions from the UI.
+- Stronger `/status` polling with progressive messages.
+- Project hygiene: robust `.gitignore`, persistent DB directories with `.gitkeep`.
+
+Developer notes
+- SSE returns structured events: `status`, `token`, `formatted_token`, `done`, `error`.
+- Vector store persistence in `db/chroma_db/` (ignored by git).
+- Sessions persist in localStorage; server also exposes chat memory endpoints.
+
+### v2.0.0 – Fix Finder Testing Assistant
+Major System Evolution: From Basic RAG to Universal Testing Intelligence
 
 🔄 **Architecture Transformation**
 - Migrated from Azure OpenAI + FAISS to ChromaDB vector database for better performance
@@ -182,27 +225,32 @@ TEMPERATURE=0.7
 | Endpoint | Method | Description | Example |
 |----------|--------|-------------|---------|
 | `/status` | GET | Get system status and document count | `GET /status` |
-| `/health` | GET | Simple health check | `GET /health` |
-| `/quick-start` | POST | Initialize system with default data directory | `POST /quick-start?data_directory=data` |
-| `/query/stream` | POST | Stream real-time responses | `POST /query/stream` |
+| `/health` | GET | Health check with readiness info | `GET /health` |
+| `/quick-start` | POST | Initialize with default data dir | `POST /quick-start?data_directory=data` |
+| `/auto-initialize` | POST | Initialize with a custom source | `POST /auto-initialize?data_source=data` |
+| `/reload` | POST | Reload currently configured data | `POST /reload` |
+| `/query/stream` | POST | Stream real-time responses (SSE) | `POST /query/stream` |
 | `/query` | POST | Get complete response (non-streaming) | `POST /query` |
+| `/retrieve` | POST | Retrieve relevant documents only | `POST /retrieve` |
+| `/rebuild-index` | POST | Rebuild indices if needed | `POST /rebuild-index` |
+| `/reset-vector-store` | POST | Clear all indexed documents | `POST /reset-vector-store` |
 
 ### Request Examples
 
 #### Streaming Query
-```bash
+```cmd
 curl -X POST "http://localhost:8000/query/stream" \
   -H "Content-Type: application/json" \
   -d '{"query": "What are common API testing defects in our system?"}'
 ```
 
 #### System Status  
-```bash
+```cmd
 curl -X GET "http://localhost:8000/status"
 ```
 
 #### Quick Start with Custom Data
-```bash
+```cmd
 curl -X POST "http://localhost:8000/quick-start?data_directory=testing_data"
 ```
 
@@ -339,6 +387,16 @@ CROSS_DOMAIN_SEARCH = True  # Enable search across different testing domains
 - **HTTP Server**: Frontend serving (development)
 - **CORS**: Cross-origin resource sharing
 - **Logging**: Comprehensive application logging
+
+
+## Repository Hygiene
+
+What we ignore (so your repo stays lean):
+- Virtual envs, caches, and coverage files
+- Local logs (e.g., `*.log`, `backend/rag_system_api.log`)
+- ChromaDB persistence (`db/chroma_db/**`) and chat memory (`db/chat_memory/**`) – directories kept via `.gitkeep`
+
+Tip: To start fresh, use `scripts\cleanup.py`.
 
 
 ## Contributing
