@@ -1,0 +1,25 @@
+Checking health...
+Health: 200 in 2055.9 ms -> healthy
+Checking status...
+Status: 200 in 2060.9 ms -> ready=True
+Benchmarking /query...
+Query 1/5: 8343.1 ms (HTTP 200)
+Query 2/5: 6253.5 ms (HTTP 200)
+Query 3/5: 6789.4 ms (HTTP 200)
+Query 4/5: 6643.6 ms (HTTP 200)
+Query 5/5: 9904.4 ms (HTTP 200)
+
+Results:
+{
+  "iterations": 5,
+  "k": 10,
+  "p50_ms": 6789.441799977794,
+  "p95_ms": 10997.286749928026,
+  "samples": [
+    8343.142200028524,
+    6253.542799968272,
+    6789.441799977794,
+    6643.623499956448,
+    9904.403699969407
+  ]
+}

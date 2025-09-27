@@ -362,3 +362,11 @@ Chat memory
 - If no files are loaded, confirm the `data/` directory exists and contains supported formats.
 - To reset state, you can call `POST /reset-vector-store` and then re-initialize.
 
+## Documentation & Submission
+
+- Docs index: `docs/INDEX.md`
+- Executive overview: `docs/Solution_Overview.md`
+- Technical details and diagrams: `docs/Technical_Architecture.md` and `docs/diagrams/*`
+- Benchmarking: `docs/Performance_Benchmark.md` and `scripts/benchmark.py`
+- Prime packaging: `submission/README.md`
+
